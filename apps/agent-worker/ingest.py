@@ -7,6 +7,7 @@ Usage:
 import os
 import sys
 import uuid
+from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
@@ -14,7 +15,11 @@ from pypdf import PdfReader
 
 from embeddings import embed_batch
 
-load_dotenv()
+# Anchored to this file rather than the CWD so the worker's .env is found
+# no matter where the process was started from — eval/run_eval.py imports
+# this module while running out of eval/, where a bare load_dotenv() finds
+# nothing and DATABASE_URL silently falls back to the default below.
+load_dotenv(Path(__file__).with_name(".env"))
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://study_notes:study_notes@localhost:5432/study_notes"
@@ -45,23 +50,32 @@ def chunk_text(text: str) -> list[str]:
     return [c.strip() for c in chunks if c.strip()]
 
 
-def ingest(pdf_path: str, study_space_id: str, uploaded_by: str):
+def ingest_pages(
+    pages: list[tuple[str, str]],
+    study_space_id: str,
+    uploaded_by: str,
+    filename: str,
+) -> str | None:
+    """Chunk, embed, and store already-extracted (page_ref, text) pages.
+
+    Split out of ingest() so any source format can reuse the pipeline —
+    ingest() supplies pages from a PDF, seed_demo.py from a text file.
+    Returns the new source id, or None if there was nothing to store."""
     # Collect every chunk first so they can be embedded in one batch —
     # far faster than embedding them one at a time in the loop.
     pending: list[tuple[str, str]] = []  # (page_ref, chunk_text)
-    for page_ref, page_text in extract_pages(pdf_path):
+    for page_ref, page_text in pages:
         for chunk in chunk_text(page_text):
             pending.append((page_ref, chunk))
 
     if not pending:
-        print(f"No extractable text found in {pdf_path}. Is it a scanned PDF?")
-        return
+        print(f"No extractable text found in {filename}. Is it a scanned PDF?")
+        return None
 
     print(f"Embedding {len(pending)} chunks (first run downloads the model)...")
     vectors = embed_batch([chunk for _, chunk in pending])
 
     source_id = str(uuid.uuid4())
-    filename = os.path.basename(pdf_path)
 
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
@@ -80,6 +94,16 @@ def ingest(pdf_path: str, study_space_id: str, uploaded_by: str):
             )
 
     print(f"Ingested {filename}: {len(pending)} chunks under source {source_id}")
+    return source_id
+
+
+def ingest(pdf_path: str, study_space_id: str, uploaded_by: str):
+    return ingest_pages(
+        extract_pages(pdf_path),
+        study_space_id,
+        uploaded_by,
+        os.path.basename(pdf_path),
+    )
 
 
 if __name__ == "__main__":
