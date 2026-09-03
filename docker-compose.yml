@@ -1,0 +1,16 @@
+services:
+  db:
+    image: ankane/pgvector:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: study_notes
+      POSTGRES_PASSWORD: study_notes
+      POSTGRES_DB: study_notes
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  db_data:

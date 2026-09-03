@@ -1,0 +1,29 @@
+{
+  "course_name": "Sample Course — replace with a course you actually uploaded material for",
+  "cases": [
+    {
+      "id": "correct-restatement",
+      "notes_passage": "Mitochondria are the site of aerobic respiration and produce most of the cell's ATP.",
+      "expected_type": "none",
+      "note": "Accurately restates the source; the agent should stay quiet, not add an unnecessary citation."
+    },
+    {
+      "id": "planted-contradiction",
+      "notes_passage": "Mitochondria are found only in animal cells, not in plants.",
+      "expected_type": "contradiction",
+      "note": "Source material states mitochondria are present in both plant and animal cells."
+    },
+    {
+      "id": "gap-fill",
+      "notes_passage": "The Krebs cycle happens in the mitochondrial matrix.",
+      "expected_type": "gap_fill",
+      "note": "Source material also covers the cycle's ATP/NADH yield in depth; notes don't mention it at all."
+    },
+    {
+      "id": "missing-citation",
+      "notes_passage": "The electron transport chain generates a proton gradient used to synthesize ATP.",
+      "expected_type": "citation",
+      "note": "Correct claim, directly supported by a specific source passage, but stated with no citation."
+    }
+  ]
+}
