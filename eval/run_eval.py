@@ -6,9 +6,14 @@ log elsewhere (a CHANGELOG.md, a spreadsheet, whatever) of what each change
 did to the score; that log is the artifact worth showing in an interview.
 
 Usage:
-    python run_eval.py [path-to-test-cases.json]
+    STUDY_SPACE_ID=<uuid> python run_eval.py [path-to-test-cases.json]
+
+The study space must already have source material ingested — run
+apps/agent-worker/seed_demo.py to build one from the sample source, or
+ingest.py to build one from a real PDF.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -48,7 +53,19 @@ def run(test_cases_path: Path, study_space_id: str):
 
 if __name__ == "__main__":
     test_cases_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_TEST_CASES
-    # TODO: replace with a real study_space_id that has ingested source
-    # material matching the test cases (see apps/agent-worker/ingest.py).
-    STUDY_SPACE_ID = "TODO-real-study-space-id"
-    run(test_cases_path, STUDY_SPACE_ID)
+
+    study_space_id = os.getenv("STUDY_SPACE_ID")
+    if not study_space_id:
+        sys.exit(
+            """STUDY_SPACE_ID is not set.
+
+It must name a study space that already has source material ingested —
+the retrieval query is scoped to it, so an empty space retrieves nothing
+and every case scores wrong.
+
+To build one from the sample source material:
+    cd apps/agent-worker && python seed_demo.py
+then re-run the eval with the study_space_id it prints."""
+        )
+
+    run(test_cases_path, study_space_id)

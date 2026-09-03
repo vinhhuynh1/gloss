@@ -13,6 +13,7 @@ calling this on a timer instead of a manual trigger.
 import json
 import os
 import sys
+from pathlib import Path
 
 import anthropic
 import psycopg
@@ -22,7 +23,10 @@ from dotenv import load_dotenv
 from embeddings import embed
 from prompts import AGENT_SYSTEM_PROMPT, build_agent_prompt
 
-load_dotenv()
+# Anchored to this file rather than the CWD — eval/run_eval.py imports this
+# module while running out of eval/, where a bare load_dotenv() finds no
+# .env at all and ANTHROPIC_API_KEY would never be loaded.
+load_dotenv(Path(__file__).with_name(".env"))
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://study_notes:study_notes@localhost:5432/study_notes"
@@ -30,7 +34,7 @@ DATABASE_URL = os.getenv(
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # If this model name is rejected, check the current list at
 # https://docs.claude.com/en/docs/about-claude/models and update it here.
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
 
 TOP_K = 5
 VALID_TYPES = {"citation", "contradiction", "gap_fill", "none"}
@@ -57,6 +61,20 @@ def retrieve_chunks(study_space_id: str, notes_passage: str) -> list[dict]:
     return [{"id": str(r[0]), "text": r[1], "page_ref": r[2]} for r in rows]
 
 
+def _response_text(response) -> str:
+    """The first text block of a response.
+
+    Not the same as content[0]: on current models thinking is on by default,
+    so content[0] is usually a thinking block and indexing it blindly raises
+    AttributeError."""
+    for block in response.content:
+        if block.type == "text":
+            return block.text
+    raise ValueError(
+        f"No text block in response (stop_reason={response.stop_reason!r})"
+    )
+
+
 def _extract_json(raw: str) -> dict:
     """Models often wrap JSON in ``` fences despite being told not to.
     Strip them rather than letting a well-formed answer fail to parse."""
@@ -77,7 +95,7 @@ def call_llm(notes_passage: str, chunks: list[dict]) -> dict:
             {"role": "user", "content": build_agent_prompt(notes_passage, chunks)}
         ],
     )
-    result = _extract_json(response.content[0].text)
+    result = _extract_json(_response_text(response))
     return _validate(result, chunks)
 
 
