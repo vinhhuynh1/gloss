@@ -1,31 +1,24 @@
-import { useMemo } from "react";
-import { WebsocketProvider } from "y-websocket";
-import * as Y from "yjs";
+import { useState } from "react";
 
-import Editor from "./components/Editor";
-import SuggestionSidebar from "./components/SuggestionSidebar";
+import { useAuth } from "./auth/AuthProvider";
+import LoginScreen from "./auth/LoginScreen";
+import SpaceListPage from "./pages/SpaceListPage";
+import SpacePage from "./pages/SpacePage";
+import type { StudySpace } from "./lib/types";
 
-// TODO: come from routing/auth once those exist. Hardcoded for local dev.
-const DOCUMENT_ID = "demo-document";
-const CURRENT_USER = { name: "You", color: "#6366f1" };
-
-// Local dev: run `npx y-websocket` and point here. Swap for a managed
-// provider (Liveblocks, PartyKit) before deploying — see the build-plan
-// doc's architecture table for why this stays a separate process from
-// the FastAPI backend rather than living inside it.
-const WEBSOCKET_URL = "ws://localhost:1234";
-
+// No router yet: one piece of state covers "list" vs "one space", and
+// skipping react-router also means the static host needs no SPA-fallback
+// rewrite rules. Deep links are a week-2 concern.
 export default function App() {
-  const ydoc = useMemo(() => new Y.Doc(), []);
-  const provider = useMemo(
-    () => new WebsocketProvider(WEBSOCKET_URL, DOCUMENT_ID, ydoc),
-    [ydoc]
-  );
+  const { loading, session } = useAuth();
+  const [space, setSpace] = useState<StudySpace | null>(null);
 
-  return (
-    <div className="app-layout">
-      <Editor ydoc={ydoc} provider={provider} user={CURRENT_USER} />
-      <SuggestionSidebar documentId={DOCUMENT_ID} />
-    </div>
+  if (loading) return <p className="muted centered">Loading…</p>;
+  if (!session) return <LoginScreen />;
+
+  return space ? (
+    <SpacePage space={space} onBack={() => setSpace(null)} />
+  ) : (
+    <SpaceListPage onOpen={setSpace} />
   );
 }
