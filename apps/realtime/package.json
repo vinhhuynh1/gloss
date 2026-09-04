@@ -1,0 +1,22 @@
+{
+  "name": "study-notes-realtime",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Yjs WebSocket sync server for the shared notes document.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0",
+    "y-websocket": "^2.1.0",
+    "yjs": "^13.6.19"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

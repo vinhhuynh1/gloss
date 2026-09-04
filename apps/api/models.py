@@ -30,8 +30,20 @@ class StudySpace(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
-    documents: Mapped[list["Document"]] = relationship(back_populates="study_space")
-    sources: Mapped[list["Source"]] = relationship(back_populates="study_space")
+    # passive_deletes hands the cascade to Postgres, which the schema already
+    # declares as ON DELETE CASCADE. Without it SQLAlchemy loads the children
+    # on delete and tries to null out study_space_id — a NOT NULL column — so
+    # deleting a space fails with an IntegrityError.
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="study_space",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    sources: Mapped[list["Source"]] = relationship(
+        back_populates="study_space",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class StudySpaceMember(Base):
@@ -55,11 +67,19 @@ class Document(Base):
     # Latest Yjs document state. The API treats this as an opaque blob —
     # only the frontend (via Yjs) and the agent worker's retrieval step
     # ever need to interpret it.
+    #
+    # WRITER OF RECORD: apps/realtime. It flushes here on a debounce and on
+    # shutdown. PUT /documents/{id}/snapshot writes the same column and is a
+    # second writer — see the note in routers/documents.py.
     crdt_snapshot: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     study_space: Mapped["StudySpace"] = relationship(back_populates="documents")
-    suggestions: Mapped[list["Suggestion"]] = relationship(back_populates="document")
+    suggestions: Mapped[list["Suggestion"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Source(Base):
@@ -72,7 +92,11 @@ class Source(Base):
     uploaded_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     study_space: Mapped["StudySpace"] = relationship(back_populates="sources")
-    chunks: Mapped[list["SourceChunk"]] = relationship(back_populates="source")
+    chunks: Mapped[list["SourceChunk"]] = relationship(
+        back_populates="source",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class SourceChunk(Base):

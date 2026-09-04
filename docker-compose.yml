@@ -10,7 +10,11 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # Mounts the directory, not one file: the Postgres entrypoint runs every
+      # *.sql here in alphabetical order, and only on first boot of an empty
+      # volume. infra/supabase/ is deliberately excluded — it references
+      # auth.users, which this image has no notion of.
+      - ./infra/migrations:/docker-entrypoint-initdb.d
 
 volumes:
   db_data:

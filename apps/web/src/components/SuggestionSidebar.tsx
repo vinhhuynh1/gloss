@@ -1,43 +1,46 @@
 import { useEffect, useState } from "react";
 
-// Matches packages/shared/types.ts — duplicated here rather than imported
-// so this scaffold has no cross-package build config to set up. Point this
-// at the shared package once the monorepo has a build step wired up.
-interface Suggestion {
-  id: string;
-  type: "citation" | "contradiction" | "gap_fill";
-  proposed_text: string;
-  source_chunk_id: string | null;
-}
-
-const API_BASE_URL = "http://localhost:8000";
-const CURRENT_USER_ID = "TODO-real-user-id";
+import { apiFetch } from "../lib/api";
+import type { Suggestion } from "../lib/types";
 
 export default function SuggestionSidebar({ documentId }: { documentId: string }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/suggestions/document/${documentId}`)
-      .then((res) => res.json())
-      .then(setSuggestions)
-      .catch(() => setSuggestions([]));
+    let active = true;
+    apiFetch<Suggestion[]>(`/suggestions/document/${documentId}`)
+      .then((rows) => active && setSuggestions(rows))
+      // Surfaced rather than swallowed: the previous catch turned every
+      // failure into "Nothing pending", which hid a permanent 422 caused by
+      // the placeholder document id.
+      .catch((err) => active && setError(err.message));
+    return () => {
+      active = false;
+    };
   }, [documentId]);
 
   async function resolve(id: string, accept: boolean) {
-    await fetch(`${API_BASE_URL}/suggestions/${id}/resolve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resolved_by: CURRENT_USER_ID, accept }),
-    });
-    // TODO: on accept, also apply proposed_text into the Yjs doc at the
-    // suggestion's anchor — this only records the decision server-side.
-    setSuggestions((prev) => prev.filter((s) => s.id !== id));
+    // resolved_by is no longer sent — the API takes it from the caller's
+    // token, so a client can only ever record a decision as itself.
+    try {
+      await apiFetch(`/suggestions/${id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ accept }),
+      });
+      // TODO: on accept, also apply proposed_text into the Yjs doc at the
+      // suggestion's anchor — this only records the decision server-side.
+      setSuggestions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save decision");
+    }
   }
 
   return (
     <aside className="suggestion-sidebar">
       <h2>AI suggestions</h2>
-      {suggestions.length === 0 && <p className="muted">Nothing pending.</p>}
+      {error && <p className="error">{error}</p>}
+      {!error && suggestions.length === 0 && <p className="muted">Nothing pending.</p>}
       {suggestions.map((s) => (
         <div key={s.id} className={`suggestion-card suggestion-${s.type}`}>
           <span className="suggestion-type">{s.type.replace("_", " ")}</span>
