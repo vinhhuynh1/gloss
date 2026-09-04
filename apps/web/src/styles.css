@@ -6,7 +6,8 @@ body {
 
 .app-layout {
   display: flex;
-  height: 100vh;
+  height: calc(100vh - 140px);
+  border-top: 1px solid #e5e7eb;
 }
 
 .editor-pane {
@@ -45,4 +46,142 @@ body {
 
 .suggestion-actions button {
   margin-right: 0.5rem;
+}
+
+/* --- auth + space navigation --- */
+
+.centered {
+  text-align: center;
+  padding: 4rem 1rem;
+}
+
+.error {
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.login-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 2rem;
+  width: min(100%, 380px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.login-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+input {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 400;
+}
+
+button {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #6366f1;
+  background: #6366f1;
+  color: white;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #6366f1;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  flex: 1;
+}
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.create-space,
+.invite-form {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+}
+
+.create-space input,
+.invite-form input {
+  flex: 1;
+  max-width: 340px;
+}
+
+.space-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 1.5rem;
+}
+
+.space-list li {
+  margin-bottom: 0.5rem;
+}
+
+.space-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  color: inherit;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.space-list-page > .muted,
+.space-page > .muted,
+.space-list-page > .error,
+.space-page > .error {
+  padding: 0 1.5rem;
 }
