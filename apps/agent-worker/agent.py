@@ -32,6 +32,10 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://study_notes:study_notes@localhost:5432/study_notes"
 )
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+# The worker has no Supabase session — there is no human behind an agent
+# pass — so POST /suggestions authenticates with this shared secret instead
+# of a user JWT. Must match AGENT_SERVICE_TOKEN in apps/api/.env.
+AGENT_SERVICE_TOKEN = os.getenv("AGENT_SERVICE_TOKEN", "")
 # If this model name is rejected, check the current list at
 # https://docs.claude.com/en/docs/about-claude/models and update it here.
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
@@ -149,6 +153,7 @@ def run_agent_pass(document_id: str, study_space_id: str, notes_passage: str):
             "proposed_text": result["proposed_text"],
             "source_chunk_id": result.get("source_chunk_id"),
         },
+        headers={"X-Agent-Token": AGENT_SERVICE_TOKEN},
         timeout=30,
     )
     response.raise_for_status()
