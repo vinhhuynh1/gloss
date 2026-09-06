@@ -123,6 +123,16 @@ body {
   font-size: 1.5rem;
 }
 
+.dev-auth-banner {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.85rem;
+}
+
 .login-card label {
   display: flex;
   flex-direction: column;

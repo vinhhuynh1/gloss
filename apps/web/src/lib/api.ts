@@ -1,5 +1,5 @@
 import { env } from "./env";
-import { supabase } from "./supabase";
+import { getSession, signOut } from "./session";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 /**
- * fetch() against the API with the caller's Supabase access token attached.
+ * fetch() against the API with the caller's access token attached.
  *
  * getSession() is called per request on purpose: supabase-js refreshes the
  * token in the background, so a token captured once at mount goes stale and
@@ -19,9 +19,7 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const session = await getSession();
 
   if (!session) throw new ApiError(401, "Not signed in");
 
@@ -37,7 +35,7 @@ export async function apiFetch<T>(
   if (res.status === 401) {
     // The token was rejected rather than merely absent — drop the dead
     // session so the UI falls back to the login screen instead of looping.
-    await supabase.auth.signOut();
+    await signOut();
     throw new ApiError(401, "Session expired");
   }
 

@@ -1,4 +1,3 @@
-import type { Session, User } from "@supabase/supabase-js";
 import {
   createContext,
   useContext,
@@ -8,11 +7,17 @@ import {
   type ReactNode,
 } from "react";
 
-import { supabase } from "../lib/supabase";
+import {
+  getSession,
+  onSessionChange,
+  signOut as sessionSignOut,
+  type Session,
+  type SessionUser,
+} from "../lib/session";
 
 interface AuthState {
   session: Session | null;
-  user: User | null;
+  user: SessionUser | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -28,21 +33,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    void getSession().then((next) => {
       if (!active) return;
-      setSession(data.session);
+      setSession(next);
       setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
-    });
+    // Also fires on Supabase's TOKEN_REFRESHED, which is what keeps
+    // session.access_token fresh for useCollabProvider's refresh effect.
+    const unsubscribe = onSessionChange((next) => setSession(next));
 
     return () => {
       active = false;
-      subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 
@@ -51,9 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user: session?.user ?? null,
       loading,
-      signOut: async () => {
-        await supabase.auth.signOut();
-      },
+      signOut: sessionSignOut,
     }),
     [session, loading]
   );

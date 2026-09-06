@@ -72,3 +72,17 @@ class UpdateStudySpace(BaseModel):
 class InviteMember(BaseModel):
     # Email, not user_id: a client has no way to know another user's uuid.
     email: EmailStr
+
+
+class DevLogin(BaseModel):
+    """Local development only — see routers/dev_auth.py."""
+
+    # EmailStr for shape only. Nothing is sent to this address and nothing
+    # verifies it exists, which is the entire point: ada@test.local works.
+    email: EmailStr
+    name: str | None = None
+
+
+class DevLoginOut(BaseModel):
+    access_token: str
+    user: UserOut

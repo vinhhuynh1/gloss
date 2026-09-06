@@ -24,9 +24,23 @@ const WS_URL = required("VITE_WS_URL", import.meta.env.VITE_WS_URL).replace(
   ""
 );
 
+// Local development against no Supabase project at all — see lib/session.ts
+// and apps/api/routers/dev_auth.py. Compared against "1" rather than coerced,
+// so a stray "false" or "0" cannot switch it on.
+const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === "1";
+
+/** Required unless dev auth is on, in which case Supabase is never contacted. */
+function requiredUnlessDevAuth(name: string, value: string | undefined): string {
+  return DEV_AUTH ? (value ?? "") : required(name, value);
+}
+
 export const env = {
-  SUPABASE_URL: required("VITE_SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL),
-  SUPABASE_ANON_KEY: required(
+  DEV_AUTH,
+  SUPABASE_URL: requiredUnlessDevAuth(
+    "VITE_SUPABASE_URL",
+    import.meta.env.VITE_SUPABASE_URL
+  ),
+  SUPABASE_ANON_KEY: requiredUnlessDevAuth(
     "VITE_SUPABASE_ANON_KEY",
     import.meta.env.VITE_SUPABASE_ANON_KEY
   ),
