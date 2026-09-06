@@ -44,7 +44,16 @@ setPersistence(makePersistence(pool));
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      // Read cross-origin by the web app. A browser cannot see the HTTP
+      // status an upgrade was refused with — a failed WebSocket surfaces as
+      // an opaque error and close code 1006 — so asking this endpoint
+      // whether the server is up is the only way the client can tell "you
+      // were removed from this space" (server up, upgrade refused) from
+      // "the server is down" (nothing answers). Only liveness is exposed.
+      "Access-Control-Allow-Origin": "*",
+    });
     res.end(JSON.stringify({ status: "ok", documents: docs.size }));
     return;
   }
@@ -54,7 +63,16 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 
-function reject(socket, code, message) {
+/**
+ * Refuse an upgrade, and say so in the log.
+ *
+ * The client cannot report which gate it failed (see the /health comment
+ * above), so the server log is the only place the reason exists. Never log
+ * the token itself — it is a bearer credential and this output ends up in
+ * platform log storage.
+ */
+function reject(socket, code, message, reason) {
+  console.warn(`[upgrade] ${code} ${message}${reason ? ` — ${reason}` : ""}`);
   socket.write(`HTTP/1.1 ${code} ${message}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
 }
@@ -67,13 +85,27 @@ server.on("upgrade", async (req, socket, head) => {
 
     // Room names are document uuids. Reject anything else outright rather
     // than letting a client invent a room.
-    if (!isUuid(docName)) return reject(socket, 400, "Bad Request");
+    if (!isUuid(docName)) {
+      return reject(socket, 400, "Bad Request", `room "${docName}" is not a uuid`);
+    }
 
     const userId = await verifySupabaseJwt(token);
-    if (!userId) return reject(socket, 401, "Unauthorized");
+    if (!userId) {
+      return reject(
+        socket,
+        401,
+        "Unauthorized",
+        token ? "token invalid or expired" : "no token"
+      );
+    }
 
     if (!(await userCanAccessDocument(pool, userId, docName))) {
-      return reject(socket, 403, "Forbidden");
+      return reject(
+        socket,
+        403,
+        "Forbidden",
+        `user ${userId} is not a member of the space owning ${docName}`
+      );
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
@@ -84,7 +116,7 @@ server.on("upgrade", async (req, socket, head) => {
     });
   } catch (err) {
     console.error("[upgrade] failed:", err.message);
-    reject(socket, 500, "Internal Server Error");
+    reject(socket, 500, "Internal Server Error", err.message);
   }
 });
 
