@@ -63,13 +63,7 @@ export default function SpacePage({
   const identity = useMemo(
     () =>
       user
-        ? {
-            name:
-              (user.user_metadata?.name as string | undefined) ??
-              user.email ??
-              "Anonymous",
-            color: colorFromUserId(user.id),
-          }
+        ? { name: user.name || user.email || "Anonymous", color: colorFromUserId(user.id) }
         : null,
     [user]
   );

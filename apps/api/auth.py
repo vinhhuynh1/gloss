@@ -36,6 +36,13 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 # Setting this forces the symmetric path; leaving it unset uses JWKS.
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
+# Local development only. When set, routers/dev_auth.py is mounted and issues
+# tokens signed with this secret, so the whole app runs with no Supabase
+# project at all. Kept separate from SUPABASE_JWT_SECRET on purpose: that one
+# means "this Supabase project still signs with the legacy shared secret", and
+# overloading it would make a later migration read as already-configured.
+DEV_AUTH_SECRET = os.getenv("DEV_AUTH_SECRET", "")
+
 AGENT_SERVICE_TOKEN = os.getenv("AGENT_SERVICE_TOKEN", "")
 
 _bearer = HTTPBearer(auto_error=True)
@@ -73,11 +80,15 @@ def decode_token(token: str) -> dict:
     if issuer:
         common["issuer"] = issuer
 
+    # Both symmetric paths verify the same claim set as the JWKS one — the
+    # signer changes, nothing else. Dev tokens are still bearer tokens with an
+    # expiry that every endpoint requires; this is a different issuer, not an
+    # auth bypass.
+    symmetric_key = DEV_AUTH_SECRET or SUPABASE_JWT_SECRET
+
     try:
-        if SUPABASE_JWT_SECRET:
-            return jwt.decode(
-                token, SUPABASE_JWT_SECRET, algorithms=["HS256"], **common
-            )
+        if symmetric_key:
+            return jwt.decode(token, symmetric_key, algorithms=["HS256"], **common)
         signing_key = _jwk_client().get_signing_key_from_jwt(token).key
         return jwt.decode(
             token, signing_key, algorithms=["ES256", "RS256"], **common
@@ -86,25 +97,18 @@ def decode_token(token: str) -> dict:
         raise _unauthorized("Invalid or expired token") from exc
 
 
-def get_current_user(
-    creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
-    db: Annotated[Session, Depends(get_db)],
-) -> User:
-    claims = decode_token(creds.credentials)
+def upsert_user(db: Session, user_id: uuid.UUID, email: str, name: str) -> User:
+    """
+    Fetch the users row at `user_id`, creating it if absent.
 
-    try:
-        user_id = uuid.UUID(claims["sub"])
-    except (KeyError, ValueError) as exc:
-        raise _unauthorized("Token has no usable subject") from exc
-
+    Shared with routers/dev_auth.py, which needs exactly the same behaviour at
+    login time. The id is always supplied by the caller rather than generated,
+    so it lines up with whatever the token's `sub` will be and every existing
+    foreign key resolves.
+    """
     user = db.get(User, user_id)
     if user is not None:
         return user
-
-    # Not mirrored yet. Create the row with the token's own id so every
-    # existing foreign key lines up.
-    email = claims.get("email") or f"{user_id}@unknown.invalid"
-    name = (claims.get("user_metadata") or {}).get("name") or email.split("@")[0]
 
     user = User(id=user_id, email=email, name=name)
     db.add(user)
@@ -120,6 +124,24 @@ def get_current_user(
     else:
         db.refresh(user)
     return user
+
+
+def get_current_user(
+    creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    claims = decode_token(creds.credentials)
+
+    try:
+        user_id = uuid.UUID(claims["sub"])
+    except (KeyError, ValueError) as exc:
+        raise _unauthorized("Token has no usable subject") from exc
+
+    # Not mirrored yet. Create the row with the token's own id so every
+    # existing foreign key lines up.
+    email = claims.get("email") or f"{user_id}@unknown.invalid"
+    name = (claims.get("user_metadata") or {}).get("name") or email.split("@")[0]
+    return upsert_user(db, user_id, email, name)
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

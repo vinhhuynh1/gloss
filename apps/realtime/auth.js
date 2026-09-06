@@ -16,6 +16,11 @@ const { createRemoteJWKSet, jwtVerify } = require("jose");
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || "";
 
+// Local development only, and must match apps/api's DEV_AUTH_SECRET — that is
+// the process minting these tokens (see apps/api/routers/dev_auth.py). Both
+// gates below still run in full; only the signer differs.
+const DEV_AUTH_SECRET = process.env.DEV_AUTH_SECRET || "";
+
 let jwks = null;
 function getJwks() {
   if (!jwks) {
@@ -46,13 +51,11 @@ async function verifySupabaseJwt(token) {
   const options = { audience: "authenticated" };
   if (SUPABASE_URL) options.issuer = `${SUPABASE_URL}/auth/v1`;
 
+  const symmetricSecret = DEV_AUTH_SECRET || SUPABASE_JWT_SECRET;
+
   try {
-    const { payload } = SUPABASE_JWT_SECRET
-      ? await jwtVerify(
-          token,
-          new TextEncoder().encode(SUPABASE_JWT_SECRET),
-          options
-        )
+    const { payload } = symmetricSecret
+      ? await jwtVerify(token, new TextEncoder().encode(symmetricSecret), options)
       : await jwtVerify(token, getJwks(), options);
 
     return typeof payload.sub === "string" && isUuid(payload.sub)

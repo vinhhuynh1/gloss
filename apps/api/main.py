@@ -30,6 +30,19 @@ app.include_router(study_spaces.router)
 app.include_router(documents.router)
 app.include_router(suggestions.router)
 
+# Mounted only when DEV_AUTH_SECRET is set, so a deployment that simply does
+# not set the variable cannot expose a passwordless login by accident — there
+# is no flag to get wrong, and auth.py refuses these signatures under the same
+# condition. See routers/dev_auth.py.
+if os.getenv("DEV_AUTH_SECRET"):
+    from routers import dev_auth
+
+    app.include_router(dev_auth.router)
+    print(
+        "WARNING: dev auth is enabled. POST /dev/login issues a valid token "
+        "for any email address, with no password. Local development only."
+    )
+
 
 @app.get("/health")
 def health():
