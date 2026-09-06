@@ -19,6 +19,11 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
+const WS_URL = required("VITE_WS_URL", import.meta.env.VITE_WS_URL).replace(
+  /\/$/,
+  ""
+);
+
 export const env = {
   SUPABASE_URL: required("VITE_SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL),
   SUPABASE_ANON_KEY: required(
@@ -29,5 +34,11 @@ export const env = {
     "VITE_API_BASE_URL",
     import.meta.env.VITE_API_BASE_URL
   ).replace(/\/$/, ""),
-  WS_URL: required("VITE_WS_URL", import.meta.env.VITE_WS_URL).replace(/\/$/, ""),
+  WS_URL,
+
+  // Derived rather than a fifth variable: it is always the same host as
+  // VITE_WS_URL, and two variables that must agree are two variables that
+  // eventually will not. ws:// -> http:// and wss:// -> https:// both fall
+  // out of the same replace. See useCollabProvider for what probes it.
+  WS_HEALTH_URL: `${WS_URL.replace(/^ws/, "http")}/health`,
 };

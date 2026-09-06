@@ -20,6 +20,10 @@ interface EditorProps {
 // its own first.
 export default function Editor({ ydoc, provider, user }: EditorProps) {
   const editor = useEditor({
+    // No `content` option, deliberately. The Y.Doc is the document; passing
+    // initial content alongside Collaboration appends it to the CRDT on every
+    // load, so a placeholder paragraph would duplicate itself once per session
+    // for every collaborator.
     extensions: [
       StarterKit.configure({ history: false }), // Yjs handles undo/history
       Collaboration.configure({ document: ydoc }),
