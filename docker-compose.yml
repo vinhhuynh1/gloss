@@ -16,5 +16,36 @@ services:
       # auth.users, which this image has no notion of.
       - ./infra/migrations:/docker-entrypoint-initdb.d
 
+  # The Yjs sync server. Optional for local work — running it on the host with
+  # `cd apps/realtime && npm run dev` gives faster restarts — but having it
+  # here means `docker compose up` brings up a whole working stack.
+  #
+  # DO NOT `--scale` THIS SERVICE. y-websocket holds each document in one
+  # process's memory with no cross-node coordination, so a second replica
+  # silently forks the document in two and the last writer wins at flush time.
+  # The same invariant is documented at the top of apps/realtime/server.js.
+  realtime:
+    build: ./apps/realtime
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "1234:1234"
+    # SUPABASE_URL (and SUPABASE_JWT_SECRET for legacy projects) come from
+    # your own file; without them no connection can be authenticated.
+    #
+    # required: false so that a checkout with no .env yet still gets a working
+    # `docker compose up -d` for the database — the realtime container will
+    # start and refuse every upgrade, rather than failing the whole stack.
+    env_file:
+      - path: ./apps/realtime/.env
+        required: false
+    environment:
+      # Overrides whatever .env holds: inside the compose network the database
+      # is "db", not "localhost", and this image has no TLS to the local
+      # Postgres. Listed after env_file, which is what makes it win.
+      DATABASE_URL: postgresql://study_notes:study_notes@db:5432/study_notes
+      PGSSL_DISABLE: "1"
+
 volumes:
   db_data:

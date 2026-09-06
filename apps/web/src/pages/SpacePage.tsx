@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { WebsocketProvider } from "y-websocket";
-import * as Y from "yjs";
 
 import Editor from "../components/Editor";
+import PresenceBar from "../components/PresenceBar";
 import SuggestionSidebar from "../components/SuggestionSidebar";
 import { useAuth } from "../auth/AuthProvider";
-import { apiFetch } from "../lib/api";
-import { env } from "../lib/env";
-import { supabase } from "../lib/supabase";
+import { ApiError, apiFetch } from "../lib/api";
+import { useCollabProvider } from "../lib/useCollabProvider";
 import type { Member, SpaceDocument, StudySpace } from "../lib/types";
 
 /** Stable per-user cursor colour, so a collaborator looks the same each session. */
@@ -18,34 +16,49 @@ function colorFromUserId(id: string): string {
 }
 
 export default function SpacePage({
-  space,
+  spaceId,
   onBack,
 }: {
-  space: StudySpace;
+  spaceId: string;
   onBack: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
+  const [space, setSpace] = useState<StudySpace | null>(null);
   const [doc, setDoc] = useState<SpaceDocument | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
     let active = true;
+    // The space itself is fetched rather than passed in: on a pasted deep
+    // link there is no StudySpace object in memory to pass. The endpoint is
+    // membership-guarded (apps/api/authz.py), so a non-member following a
+    // shared link gets a clean 403 here rather than an empty editor.
     Promise.all([
-      apiFetch<SpaceDocument>(`/study-spaces/${space.id}/document`),
-      apiFetch<Member[]>(`/study-spaces/${space.id}/members`),
+      apiFetch<StudySpace>(`/study-spaces/${spaceId}`),
+      apiFetch<SpaceDocument>(`/study-spaces/${spaceId}/document`),
+      apiFetch<Member[]>(`/study-spaces/${spaceId}/members`),
     ])
-      .then(([d, m]) => {
+      .then(([s, d, m]) => {
         if (!active) return;
+        setSpace(s);
         setDoc(d);
         setMembers(m);
       })
-      .catch((err) => active && setError(err.message));
+      .catch((err) => {
+        if (!active) return;
+        if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+          setDenied(true);
+        } else {
+          setError(err instanceof Error ? err.message : "Failed to load space");
+        }
+      });
     return () => {
       active = false;
     };
-  }, [space.id]);
+  }, [spaceId]);
 
   const identity = useMemo(
     () =>
@@ -61,47 +74,19 @@ export default function SpacePage({
     [user]
   );
 
-  const ydoc = useMemo(() => new Y.Doc(), [doc?.id]);
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-
-  useEffect(() => {
-    if (!doc) return;
-
-    // The token is passed as a query param because the browser WebSocket API
-    // cannot set headers. apps/realtime verifies it on upgrade and checks the
-    // caller is a member of the space owning this document.
-    let cancelled = false;
-    let created: WebsocketProvider | null = null;
-
-    void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (cancelled || !session) return;
-
-      created = new WebsocketProvider(env.WS_URL, doc.id, ydoc, {
-        params: { token: session.access_token },
-      });
-      setProvider(created);
-    })();
-
-    // Without this the socket leaks on every space switch and leaves ghost
-    // cursors behind for other collaborators.
-    return () => {
-      cancelled = true;
-      created?.destroy();
-      setProvider(null);
-    };
-  }, [doc, ydoc]);
+  const { ydoc, provider, status } = useCollabProvider(
+    doc?.id,
+    session?.access_token
+  );
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
     try {
-      const member = await apiFetch<Member>(
-        `/study-spaces/${space.id}/members`,
-        { method: "POST", body: JSON.stringify({ email: inviteEmail.trim() }) }
-      );
+      const member = await apiFetch<Member>(`/study-spaces/${spaceId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ email: inviteEmail.trim() }),
+      });
       setInviteEmail("");
       setMembers((prev) =>
         prev.some((m) => m.user_id === member.user_id) ? prev : [...prev, member]
@@ -112,16 +97,36 @@ export default function SpacePage({
     }
   }
 
+  if (denied) {
+    return (
+      <div className="space-page">
+        <header className="app-header">
+          <button className="link-button" onClick={onBack}>
+            ← All spaces
+          </button>
+        </header>
+        <p className="muted">
+          You don't have access to this study space. Ask whoever shared the link
+          to invite you.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-page">
       <header className="app-header">
         <button className="link-button" onClick={onBack}>
           ← All spaces
         </button>
-        <h1>{space.course_name}</h1>
+        <h1>{space?.course_name ?? "…"}</h1>
+        {/* Two counts that answer different questions, deliberately. This one
+            is who belongs to the space (from the API); PresenceBar's is who is
+            connected right now (from CRDT awareness). */}
         <span className="muted">
           {members.length} member{members.length === 1 ? "" : "s"}
         </span>
+        {provider && <PresenceBar provider={provider} status={status} />}
       </header>
 
       <form className="invite-form" onSubmit={invite}>
@@ -138,6 +143,10 @@ export default function SpacePage({
 
       {doc && identity && provider ? (
         <div className="app-layout">
+          {/* Kept mounted and editable in every connection state. Yjs merges
+              edits made while offline on reconnect — disabling the editor
+              would trade away the "no lost edits" property for a worse
+              experience. PresenceBar carries the status. */}
           <Editor ydoc={ydoc} provider={provider} user={identity} />
           <SuggestionSidebar documentId={doc.id} />
         </div>

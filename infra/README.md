@@ -67,6 +67,20 @@ SELECT extname FROM pg_extension WHERE extname = 'vector';
 The vector index must be **hnsw**, not ivfflat — see the comment at the top of
 `migrations/002_indexes.sql` for why that distinction matters.
 
+To confirm the collaborative editor is really persisting (and not just holding
+the document in browser memory), read the column `apps/realtime` writes:
+
+```sql
+SELECT id, octet_length(crdt_snapshot) AS bytes, updated_at FROM documents;
+```
+
+`bytes` should be non-null and grow as you type. The write happens on a
+debounce (`FLUSH_DEBOUNCE_MS`, default 5s) and again on the last disconnect
+and on SIGTERM, so give it a few seconds after the last keystroke.
+`apps/realtime` is the writer of record here; `PUT /documents/{id}/snapshot`
+touches the same column and will clobber a live session — see the note in
+`apps/api/routers/documents.py`.
+
 ## Two projects
 
 The Supabase free tier allows two active projects. Use one for `dev` and one

@@ -7,7 +7,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node --env-file=.env server.js"
   },
   "dependencies": {
     "jose": "^5.9.6",

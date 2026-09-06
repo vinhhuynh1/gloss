@@ -1,0 +1,6 @@
+# Host node_modules would overwrite the ones npm ci just built for the image's
+# platform — and this is a native-module-adjacent install (pg, ws).
+node_modules
+
+# Never bake credentials into an image. Compose passes these in at runtime.
+.env
