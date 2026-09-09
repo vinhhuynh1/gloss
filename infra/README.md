@@ -76,7 +76,7 @@ All five are idempotent — re-running them is safe.
 ### Verify
 
 ```sql
-\dt                                                  -- six tables
+\dt                                                  -- seven tables
 \d source_chunks                                     -- vector(384) + an hnsw index
 SELECT extname FROM pg_extension WHERE extname = 'vector';
 ```

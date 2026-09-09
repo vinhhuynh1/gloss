@@ -22,7 +22,7 @@ eval/
   test_cases/       Hand-written cases: source + notes + expected agent behavior
   run_eval.py       Scores the agent against test_cases
 infra/
-  migrations/       Portable Postgres schema (six tables, pgvector extension)
+  migrations/       Portable Postgres schema (seven tables, pgvector extension)
   supabase/         Supabase-only: auth mirroring and RLS lockdown
 ```
 
