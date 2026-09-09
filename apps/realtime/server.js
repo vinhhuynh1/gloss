@@ -10,7 +10,9 @@
  * memory with no cross-node coordination, so two replicas silently fork the
  * document into two divergent copies and the last writer wins at flush time.
  * The upgrade path when that becomes a real constraint is y-redis, Liveblocks,
- * or PartyKit.
+ * or PartyKit. Enforced where the platform reads it in railway.json
+ * (`numReplicas: 1`); a dashboard can still override that, so check it there
+ * too after any change to the service.
  */
 const http = require("http");
 
@@ -38,6 +40,17 @@ const pool = new Pool({
   // Supabase requires TLS but serves a cert node does not have a root for.
   ssl: process.env.PGSSL_DISABLE ? false : { rejectUnauthorized: false },
   max: Number(process.env.PG_POOL_MAX || 5),
+});
+
+// node-postgres emits "error" on the POOL when an idle client dies, and with
+// no listener that is an unhandled 'error' event — node exits, taking every
+// live editing session with it. Supabase's pooler recycles idle connections
+// routinely and a paused free-tier project drops them all at once, so this is
+// the difference between a log line and a crash loop. Nothing to do but note
+// it: the pool discards the dead client and the next checkout opens a fresh
+// one, and every connected browser still holds the full Y.Doc to re-sync from.
+pool.on("error", (err) => {
+  console.error("[pg] idle client error:", err.message);
 });
 
 setPersistence(makePersistence(pool));
