@@ -61,6 +61,13 @@ psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
 ```
 
+No `psql` on the machine? Docker has one, and feeding the file over stdin
+rather than mounting it avoids path translation on Windows entirely:
+
+```sh
+docker run --rm -i postgres:16 psql "$SUPABASE_DB_URL" < infra/migrations/001_init.sql
+```
+
 Pasting into the Supabase SQL editor works too, but running the files keeps
 applying the schema a repeatable act rather than a one-off click.
 
