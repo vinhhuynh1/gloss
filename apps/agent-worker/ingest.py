@@ -3,7 +3,13 @@ Ingestion pipeline: parse an uploaded source file into searchable chunks.
 
 Usage:
     python ingest.py <path-to-pdf> <study_space_id> <uploaded_by_user_id>
+
+The CLI above is the direct path — a file on your disk, ingested now. The
+same functions also back worker.py, which ingests files uploaded through the
+web app and therefore only ever sees bytes out of Postgres, never a path.
+Everything here that touches a file does so through bytes for that reason.
 """
+import io
 import os
 import sys
 import uuid
@@ -28,13 +34,63 @@ DATABASE_URL = os.getenv(
 CHUNK_SIZE_CHARS = 1200
 CHUNK_OVERLAP_CHARS = 200
 
+# (page_ref, text). page_ref is None when the format carries no locator to
+# cite — a heading-less .txt file — and a citation on such a chunk names the
+# file but no position within it.
+Page = tuple[str | None, str]
 
-def extract_pages(pdf_path: str) -> list[tuple[str, str]]:
-    """Returns a list of (page_ref, page_text) tuples."""
-    reader = PdfReader(pdf_path)
+
+def extract_pages_from_pdf(data: bytes) -> list[Page]:
+    """One (page_ref, text) pair per PDF page."""
+    reader = PdfReader(io.BytesIO(data))
     return [
         (f"p. {i + 1}", page.extract_text() or "") for i, page in enumerate(reader.pages)
     ]
+
+
+def split_markdown_sections(text: str) -> list[Page]:
+    """Split on `## ` headings into (page_ref, text) pairs.
+
+    The heading becomes the page_ref, which is what shows up in a citation —
+    for a real PDF that slot holds "p. 14" instead. Returns an empty list if
+    the text has no `## ` headings at all; callers decide whether that is an
+    error (seed_demo.py) or just an unstructured file (extract_pages_from_text).
+    """
+    pages: list[Page] = []
+    page_ref, buf = None, []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if page_ref is not None:
+                pages.append((page_ref, "\n".join(buf).strip()))
+            page_ref, buf = line[3:].strip(), []
+        elif page_ref is not None:
+            buf.append(line)
+    if page_ref is not None:
+        pages.append((page_ref, "\n".join(buf).strip()))
+    return [(ref, body) for ref, body in pages if body]
+
+
+def extract_pages_from_text(text: str) -> list[Page]:
+    """Markdown or plain text, with headings used as locators where they exist.
+
+    The fallback is one unlabelled page rather than invented section numbers.
+    A citation reading "part 3" would look like a real locator while pointing
+    at nothing a reader could find in the file, which is worse for a tool whose
+    whole claim is that its citations can be checked.
+    """
+    sections = split_markdown_sections(text)
+    if sections:
+        return sections
+    return [(None, text)] if text.strip() else []
+
+
+def extract_pages(filename: str, content_type: str | None, data: bytes) -> list[Page]:
+    """Dispatch on the file type. The single place that knows which parser
+    goes with which upload, so the API's allowlist and the worker agree."""
+    lowered = filename.lower()
+    if lowered.endswith(".pdf") or content_type == "application/pdf":
+        return extract_pages_from_pdf(data)
+    return extract_pages_from_text(data.decode("utf-8", errors="replace"))
 
 
 def chunk_text(text: str) -> list[str]:
@@ -50,23 +106,33 @@ def chunk_text(text: str) -> list[str]:
     return [c.strip() for c in chunks if c.strip()]
 
 
+def build_chunks(pages: list[Page]) -> list[Page]:
+    """Flatten pages into (page_ref, chunk) pairs, keeping each chunk's
+    locator attached — the page_ref is what makes a citation checkable, so it
+    has to survive chunking rather than being recovered later."""
+    return [(page_ref, chunk) for page_ref, text in pages for chunk in chunk_text(text)]
+
+
 def ingest_pages(
-    pages: list[tuple[str, str]],
+    pages: list[Page],
     study_space_id: str,
     uploaded_by: str,
     filename: str,
 ) -> str | None:
-    """Chunk, embed, and store already-extracted (page_ref, text) pages.
+    """Chunk, embed, and store already-extracted (page_ref, text) pages under
+    a newly created source row.
 
     Split out of ingest() so any source format can reuse the pipeline —
     ingest() supplies pages from a PDF, seed_demo.py from a text file.
-    Returns the new source id, or None if there was nothing to store."""
+    Returns the new source id, or None if there was nothing to store.
+
+    worker.py deliberately does NOT call this: its source row already exists,
+    created by the upload that queued the work. It reuses build_chunks() and
+    embed_batch() instead.
+    """
     # Collect every chunk first so they can be embedded in one batch —
     # far faster than embedding them one at a time in the loop.
-    pending: list[tuple[str, str]] = []  # (page_ref, chunk_text)
-    for page_ref, page_text in pages:
-        for chunk in chunk_text(page_text):
-            pending.append((page_ref, chunk))
+    pending = build_chunks(pages)
 
     if not pending:
         print(f"No extractable text found in {filename}. Is it a scanned PDF?")
@@ -80,8 +146,8 @@ def ingest_pages(
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO sources (id, study_space_id, filename, uploaded_by) "
-                "VALUES (%s, %s, %s, %s)",
+                "INSERT INTO sources (id, study_space_id, filename, uploaded_by, status) "
+                "VALUES (%s, %s, %s, %s, 'ready')",
                 (source_id, study_space_id, filename, uploaded_by),
             )
             cur.executemany(
@@ -98,11 +164,13 @@ def ingest_pages(
 
 
 def ingest(pdf_path: str, study_space_id: str, uploaded_by: str):
+    filename = os.path.basename(pdf_path)
+    data = Path(pdf_path).read_bytes()
     return ingest_pages(
-        extract_pages(pdf_path),
+        extract_pages(filename, None, data),
         study_space_id,
         uploaded_by,
-        os.path.basename(pdf_path),
+        filename,
     )
 
 

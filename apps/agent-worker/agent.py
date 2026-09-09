@@ -16,21 +16,17 @@ import sys
 from pathlib import Path
 
 import anthropic
-import psycopg
 import requests
 from dotenv import load_dotenv
 
-from embeddings import embed
 from prompts import AGENT_SYSTEM_PROMPT, build_agent_prompt
+from retrieval import search
 
 # Anchored to this file rather than the CWD — eval/run_eval.py imports this
 # module while running out of eval/, where a bare load_dotenv() finds no
 # .env at all and ANTHROPIC_API_KEY would never be loaded.
 load_dotenv(Path(__file__).with_name(".env"))
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://study_notes:study_notes@localhost:5432/study_notes"
-)
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # The worker has no Supabase session — there is no human behind an agent
 # pass — so POST /suggestions authenticates with this shared secret instead
@@ -46,23 +42,13 @@ VALID_TYPES = {"citation", "contradiction", "gap_fill", "none"}
 
 def retrieve_chunks(study_space_id: str, notes_passage: str) -> list[dict]:
     """Top-K most semantically similar chunks, scoped to this study space so
-    one course's material can never leak into another course's answers."""
-    query_embedding = embed(notes_passage)
-    with psycopg.connect(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT sc.id, sc.text, sc.page_ref
-                FROM source_chunks sc
-                JOIN sources s ON s.id = sc.source_id
-                WHERE s.study_space_id = %s
-                ORDER BY sc.embedding <=> %s::vector
-                LIMIT %s
-                """,
-                (study_space_id, str(query_embedding), TOP_K),
-            )
-            rows = cur.fetchall()
-    return [{"id": str(r[0]), "text": r[1], "page_ref": r[2]} for r in rows]
+    one course's material can never leak into another course's answers.
+
+    Thin wrapper over retrieval.search() rather than its own query: search.py
+    exists to tell you whether retrieval is working, and it can only do that
+    honestly if it runs the identical query. Kept as a named function here
+    because eval/run_eval.py imports it from this module."""
+    return search(study_space_id, notes_passage, TOP_K)
 
 
 def _response_text(response) -> str:

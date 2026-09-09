@@ -19,12 +19,27 @@ export interface DocumentSnapshot {
   updated_at: string;
 }
 
+/** Ingestion state. Only `ready` sources are retrievable by the agent —
+ * the transitions belong to apps/agent-worker/worker.py. */
+export type SourceStatus = "pending" | "processing" | "ready" | "failed";
+
 export interface Source {
   id: string;
   study_space_id: string;
   filename: string;
   uploaded_by: string;
   uploaded_at: string;
+  status: SourceStatus;
+  content_type: string | null;
+  byte_size: number | null;
+  /** Set on `failed` only, and written to be read by the person who
+   * uploaded the file rather than by a log reader. */
+  error: string | null;
+  attempts: number;
+  ingested_at: string | null;
+  /** Counted per request rather than stored on the row. Zero on a source
+   * that has not been processed yet. */
+  chunk_count: number;
 }
 
 export interface Suggestion {
