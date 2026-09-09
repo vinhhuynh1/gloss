@@ -15,7 +15,7 @@ import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from models import Document, StudySpace, StudySpaceMember, User
+from models import Document, Source, StudySpace, StudySpaceMember, User
 
 OWNER_ONLY = ("owner",)
 ANY_MEMBER = ("owner", "member")
@@ -68,3 +68,21 @@ def require_document(document_id: uuid.UUID, user: User, db: Session) -> Documen
     if membership is None:
         raise _forbidden()
     return doc
+
+
+def require_source(source_id: uuid.UUID, user: User, db: Session) -> Source:
+    """
+    Same shape as require_document: a source belongs to a study space, and
+    study-space membership is the only ACL. Kept here rather than inlined in
+    the router so "who may touch this row" stays answerable from one file.
+    """
+    source = db.get(Source, source_id)
+    if source is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+
+    membership = db.get(StudySpaceMember, (source.study_space_id, user.id))
+    if membership is None:
+        raise _forbidden()
+    return source

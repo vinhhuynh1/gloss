@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, LargeBinary, String, Text
+from sqlalchemy import ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -90,6 +90,21 @@ class Source(Base):
     filename: Mapped[str] = mapped_column(String)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     uploaded_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+    # pending | processing | ready | failed. The API only ever writes
+    # 'pending' (on upload) and 'failed' -> 'pending' (on retry); every other
+    # transition belongs to apps/agent-worker/worker.py, which is the only
+    # process that can actually chunk and embed. See 003_source_ingestion.sql.
+    status: Mapped[str] = mapped_column(String, default="pending")
+    # The uploaded bytes, kept so the corpus can be re-chunked later.
+    # Deliberately NOT in SourceOut — see schemas.py.
+    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    ingested_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     study_space: Mapped["StudySpace"] = relationship(back_populates="sources")
     chunks: Mapped[list["SourceChunk"]] = relationship(

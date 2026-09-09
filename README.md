@@ -15,7 +15,7 @@ apps/
   web/              React + Tiptap + Yjs collaborative editor
   api/              FastAPI backend: study spaces, documents, suggestions
   realtime/         Yjs WebSocket sync server (auth on upgrade, Postgres persistence)
-  agent-worker/     Ingestion pipeline + the AI agent process
+  agent-worker/     Ingestion worker + retrieval + the AI agent process
 packages/
   shared/           Shared TypeScript types
 eval/
@@ -48,8 +48,24 @@ Start them in this order — each depends on the one before it.
    missing. `VITE_WS_URL` points at the realtime server from step 3.
 5. **Agent worker** — `cd apps/agent-worker && pip install -r requirements.txt`
    Set `ANTHROPIC_API_KEY` (or your provider of choice) and `DATABASE_URL`.
-   Run `python ingest.py <path-to-pdf> <study_space_id>` to ingest a source,
-   and `python agent.py <document_id>` to run one agent pass on demand.
+   Then run `python worker.py` and leave it running: it is what turns files
+   uploaded in the web app into searchable chunks. Without it an upload
+   succeeds and then sits at "Queued" forever — the panel says so after a
+   few seconds, because it is the easiest thing to forget.
+
+   The other entry points are one-shot:
+   - `python ingest.py <path-to-pdf> <study_space_id> <user_id>` — ingest a
+     file straight off disk, no upload and no worker needed.
+   - `python search.py <study_space_id> "a question"` — query the vector
+     store by hand. This is how you check that ingestion actually worked;
+     it stops before the LLM, so it costs nothing and it separates a
+     retrieval problem from a prompt problem.
+   - `python agent.py <document_id> <study_space_id> "<passage>"` — one
+     agent pass on demand.
+   - `python worker.py --requeue [study_space_id]` — re-chunk and re-embed
+     material already ingested, after changing `CHUNK_SIZE_CHARS` or the
+     embedding model. Re-running replaces a source's chunks rather than
+     duplicating them, so this is safe to repeat.
 6. **Eval** — `cd eval && python run_eval.py` runs the agent against
    `test_cases/sample_course.json` and prints a score. Replace the sample
    with test cases built from a course you actually uploaded material for.
@@ -62,15 +78,19 @@ Start them in this order — each depends on the one before it.
 ## What's stubbed vs. real
 
 Real: the data model, the API surface with auth and membership checks, the
-ingestion and embedding pipeline, the collaborative editing path end to end
-(`apps/realtime` authenticates on upgrade and persists to Postgres), and the
-eval harness's shape.
+collaborative editing path end to end (`apps/realtime` authenticates on
+upgrade and persists to Postgres), the ingestion pipeline end to end (upload
+in the browser → queued on the `sources` row → chunked and embedded by
+`apps/agent-worker/worker.py` → searchable with `search.py`, scoped per study
+space), and the eval harness's shape.
 
-Still stubbed, and clearly marked in code: the agent's LLM call
-(`apps/agent-worker/agent.py`), the suggestion decorations in the document and
-applying an accepted suggestion into the Yjs doc (`Editor.tsx`,
-`SuggestionSidebar.tsx`), and the eval test cases themselves — the sample is a
-placeholder for cases built from a course you actually uploaded material for.
+Still stubbed, and clearly marked in code: the suggestion's document anchor
+(`yjs_relative_position_for` in `apps/agent-worker/agent.py` — the real one is
+computed client-side by the frontend trigger that does not exist yet), the
+suggestion decorations in the document and applying an accepted suggestion into
+the Yjs doc (`Editor.tsx`, `SuggestionSidebar.tsx`), and the eval test cases
+themselves — the sample is a placeholder for cases built from a course you
+actually uploaded material for.
 
 Filling those in is most of the actual project; the scaffold is here so you're
 deciding "what should the agent's prompt say" and "how good is retrieval," not

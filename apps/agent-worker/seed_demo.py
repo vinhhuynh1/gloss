@@ -24,7 +24,7 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-from ingest import ingest_pages
+from ingest import ingest_pages, split_markdown_sections
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -43,29 +43,9 @@ DEFAULT_SOURCE = (
 )
 
 
-def split_into_pages(markdown: str) -> list[tuple[str, str]]:
-    """Split on `## ` headings into (page_ref, text) pairs.
-
-    The heading becomes the page_ref, which is what shows up in a citation —
-    for a real PDF ingest.py uses "p. 14" here instead.
-    """
-    pages: list[tuple[str, str]] = []
-    page_ref, buf = None, []
-    for line in markdown.splitlines():
-        if line.startswith("## "):
-            if page_ref is not None:
-                pages.append((page_ref, "\n".join(buf).strip()))
-            page_ref, buf = line[3:].strip(), []
-        elif page_ref is not None:
-            buf.append(line)
-    if page_ref is not None:
-        pages.append((page_ref, "\n".join(buf).strip()))
-    return [(ref, text) for ref, text in pages if text]
-
-
 def seed(source_path: Path) -> tuple[str, str]:
     markdown = source_path.read_text(encoding="utf-8")
-    pages = split_into_pages(markdown)
+    pages = split_markdown_sections(markdown)
     if not pages:
         raise SystemExit(f"No `## ` sections found in {source_path}")
 

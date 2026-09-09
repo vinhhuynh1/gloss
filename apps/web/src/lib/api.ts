@@ -23,10 +23,16 @@ export async function apiFetch<T>(
 
   if (!session) throw new ApiError(401, "Not signed in");
 
+  // A FormData body must NOT carry an explicit Content-Type: the browser
+  // generates one containing the multipart boundary it chose, and setting the
+  // header by hand overwrites it with a boundary-less value the server cannot
+  // parse. The upload in SourcesPanel goes through here.
+  const isFormData = init.body instanceof FormData;
+
   const res = await fetch(`${env.API_BASE_URL}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${session.access_token}`,
       ...init.headers,
     },
