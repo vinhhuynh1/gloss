@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import Editor from "../components/Editor";
 import PresenceBar from "../components/PresenceBar";
+import SourcesPanel from "../components/SourcesPanel";
 import SuggestionSidebar from "../components/SuggestionSidebar";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
@@ -63,13 +64,7 @@ export default function SpacePage({
   const identity = useMemo(
     () =>
       user
-        ? {
-            name:
-              (user.user_metadata?.name as string | undefined) ??
-              user.email ??
-              "Anonymous",
-            color: colorFromUserId(user.id),
-          }
+        ? { name: user.name || user.email || "Anonymous", color: colorFromUserId(user.id) }
         : null,
     [user]
   );
@@ -143,6 +138,9 @@ export default function SpacePage({
 
       {doc && identity && provider ? (
         <div className="app-layout">
+          {/* Left to right: what the agent may cite, what the group wrote,
+              what the agent proposes. */}
+          <SourcesPanel spaceId={spaceId} />
           {/* Kept mounted and editable in every connection state. Yjs merges
               edits made while offline on reconnect — disabling the editor
               would trade away the "no lost edits" property for a worse

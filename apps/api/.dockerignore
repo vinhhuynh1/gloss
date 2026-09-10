@@ -1,0 +1,6 @@
+__pycache__
+*.pyc
+
+# Never bake credentials into an image. The platform injects these at runtime.
+.env
+.venv

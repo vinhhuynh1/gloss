@@ -3,6 +3,12 @@ uvicorn[standard]==0.52.4
 sqlalchemy==2.0.52
 psycopg[binary]==3.3.5
 pgvector==0.5.0
-pydantic[email]==2.13.5
+# Required by FastAPI to parse multipart/form-data — the source upload in
+# routers/sources.py. Without it that endpoint raises at import time.
+python-multipart==0.0.20
+# Plain pydantic, not pydantic[email]: the [email] extra exists only to
+# supply EmailStr, and schemas.py deliberately does not use it (see the
+# LooseEmail comment there).
+pydantic==2.13.5
 pyjwt[crypto]==2.10.1
 python-dotenv==1.2.3

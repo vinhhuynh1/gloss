@@ -33,3 +33,22 @@ export interface Suggestion {
   source_chunk_id: string | null;
   status: "pending" | "accepted" | "rejected";
 }
+
+/** Ingestion state of one uploaded file. `ready` is the only state in which
+ * the agent can retrieve against it — see apps/agent-worker/worker.py. */
+export type SourceStatus = "pending" | "processing" | "ready" | "failed";
+
+export interface Source {
+  id: string;
+  study_space_id: string;
+  filename: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  status: SourceStatus;
+  content_type: string | null;
+  byte_size: number | null;
+  error: string | null;
+  attempts: number;
+  ingested_at: string | null;
+  chunk_count: number;
+}

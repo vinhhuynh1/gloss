@@ -1,5 +1,5 @@
 import { env } from "./env";
-import { supabase } from "./supabase";
+import { getSession, signOut } from "./session";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 /**
- * fetch() against the API with the caller's Supabase access token attached.
+ * fetch() against the API with the caller's access token attached.
  *
  * getSession() is called per request on purpose: supabase-js refreshes the
  * token in the background, so a token captured once at mount goes stale and
@@ -19,16 +19,20 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const session = await getSession();
 
   if (!session) throw new ApiError(401, "Not signed in");
+
+  // A FormData body must NOT carry an explicit Content-Type: the browser
+  // generates one containing the multipart boundary it chose, and setting the
+  // header by hand overwrites it with a boundary-less value the server cannot
+  // parse. The upload in SourcesPanel goes through here.
+  const isFormData = init.body instanceof FormData;
 
   const res = await fetch(`${env.API_BASE_URL}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${session.access_token}`,
       ...init.headers,
     },
@@ -37,7 +41,7 @@ export async function apiFetch<T>(
   if (res.status === 401) {
     // The token was rejected rather than merely absent — drop the dead
     // session so the UI falls back to the login screen instead of looping.
-    await supabase.auth.signOut();
+    await signOut();
     throw new ApiError(401, "Session expired");
   }
 
