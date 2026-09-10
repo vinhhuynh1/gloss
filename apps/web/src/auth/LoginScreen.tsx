@@ -1,6 +1,7 @@
 import { useState } from "react";
 
-import { supabase } from "../lib/supabase";
+import { env } from "../lib/env";
+import { signIn } from "../lib/session";
 
 /**
  * Email + password, deliberately not magic links.
@@ -11,8 +12,13 @@ import { supabase } from "../lib/supabase";
  *
  * Turn OFF "Confirm email" in Supabase -> Authentication -> Sign In / Providers,
  * or sign-up dead-ends on that same limit.
+ *
+ * Under VITE_DEV_AUTH the password field disappears entirely — the API issues
+ * a token for any address with no account and no verification, so asking for
+ * a password would be theatre. See apps/api/routers/dev_auth.py.
  */
 export default function LoginScreen() {
+  const devAuth = env.DEV_AUTH;
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,22 +26,23 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Dev auth has no accounts to create, so the signin/signup distinction has
+  // nothing to switch on.
+  const showName = devAuth || mode === "signup";
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      const { error } =
-        mode === "signin"
-          ? await supabase.auth.signInWithPassword({ email, password })
-          : await supabase.auth.signUp({
-              email,
-              password,
-              // Read by the on_auth_user_created trigger into users.name,
-              // which becomes the collaborator's cursor label.
-              options: { data: { name: name || email.split("@")[0] } },
-            });
-      if (error) setError(error.message);
+      await signIn({
+        email,
+        password,
+        name,
+        signUp: !devAuth && mode === "signup",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
       setBusy(false);
     }
@@ -45,13 +52,22 @@ export default function LoginScreen() {
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
         <h1>Study Notes</h1>
-        <p className="muted">
-          {mode === "signin"
-            ? "Sign in to your study spaces."
-            : "Create an account to get started."}
-        </p>
 
-        {mode === "signup" && (
+        {devAuth ? (
+          // Deliberately loud. A screenshot of this screen must never be
+          // mistaken for the real sign-in.
+          <p className="dev-auth-banner">
+            Dev auth is on — any email works, no password, no account created.
+          </p>
+        ) : (
+          <p className="muted">
+            {mode === "signin"
+              ? "Sign in to your study spaces."
+              : "Create an account to get started."}
+          </p>
+        )}
+
+        {showName && (
           <label>
             Display name
             <input
@@ -71,41 +87,46 @@ export default function LoginScreen() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
+            placeholder={devAuth ? "ada@test.local" : undefined}
           />
         </label>
 
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete={
-              mode === "signin" ? "current-password" : "new-password"
-            }
-          />
-        </label>
+        {!devAuth && (
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete={
+                mode === "signin" ? "current-password" : "new-password"
+              }
+            />
+          </label>
+        )}
 
         {error && <p className="error">{error}</p>}
 
         <button type="submit" disabled={busy}>
-          {busy ? "…" : mode === "signin" ? "Sign in" : "Sign up"}
+          {busy ? "…" : devAuth ? "Continue" : mode === "signin" ? "Sign in" : "Sign up"}
         </button>
 
-        <button
-          type="button"
-          className="link-button"
-          onClick={() => {
-            setMode(mode === "signin" ? "signup" : "signin");
-            setError(null);
-          }}
-        >
-          {mode === "signin"
-            ? "Need an account? Sign up"
-            : "Already have an account? Sign in"}
-        </button>
+        {!devAuth && (
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setMode(mode === "signin" ? "signup" : "signin");
+              setError(null);
+            }}
+          >
+            {mode === "signin"
+              ? "Need an account? Sign up"
+              : "Already have an account? Sign in"}
+          </button>
+        )}
       </form>
     </div>
   );

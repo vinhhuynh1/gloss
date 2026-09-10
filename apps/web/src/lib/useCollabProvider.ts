@@ -12,7 +12,7 @@ import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 
 import { env } from "./env";
-import { supabase } from "./supabase";
+import { getSession } from "./session";
 
 export type ConnectionStatus =
   /** No provider yet, or the socket is opening. */
@@ -78,9 +78,7 @@ export function useCollabProvider(
     let failures = 0;
 
     void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const session = await getSession();
       if (cancelled || !session) return;
 
       const params = { token: session.access_token };
@@ -110,9 +108,9 @@ export function useCollabProvider(
         // A socket that dropped after the token expired would otherwise
         // replay the dead token through every backoff retry. getSession()
         // returns the cached token, refreshing it first if it is past expiry.
-        void supabase.auth.getSession().then(({ data }) => {
-          if (paramsRef.current && data.session) {
-            paramsRef.current.token = data.session.access_token;
+        void getSession().then((current) => {
+          if (paramsRef.current && current) {
+            paramsRef.current.token = current.access_token;
           }
         });
       });

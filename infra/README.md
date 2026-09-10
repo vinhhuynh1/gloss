@@ -15,12 +15,21 @@ Two sets of SQL, split by portability.
 
 `docker compose up -d` mounts `migrations/` at
 `/docker-entrypoint-initdb.d`. The Postgres entrypoint runs every `*.sql`
-there in alphabetical order, so `001` then `002`, on the **first boot of an
+there in alphabetical order, so `001`, `002`, `003`, on the **first boot of an
 empty volume only**. To re-apply after editing:
 
 ```sh
 docker compose down -v && docker compose up -d
 ```
+
+That drops your data. A database created before a migration was added is the
+common case, and applying just the new file keeps it:
+
+```sh
+docker exec -i <db-container> psql -U study_notes -d study_notes < infra/migrations/003_source_ingestion.sql
+```
+
+Every file here is idempotent, so applying one twice is harmless.
 
 ## Supabase
 
@@ -47,19 +56,27 @@ export SUPABASE_DB_URL='postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.s
 
 psql "$SUPABASE_DB_URL" -f infra/migrations/001_init.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/002_indexes.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/003_source_ingestion.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
+```
+
+No `psql` on the machine? Docker has one, and feeding the file over stdin
+rather than mounting it avoids path translation on Windows entirely:
+
+```sh
+docker run --rm -i postgres:16 psql "$SUPABASE_DB_URL" < infra/migrations/001_init.sql
 ```
 
 Pasting into the Supabase SQL editor works too, but running the files keeps
 applying the schema a repeatable act rather than a one-off click.
 
-All four are idempotent — re-running them is safe.
+All five are idempotent — re-running them is safe.
 
 ### Verify
 
 ```sql
-\dt                                                  -- six tables
+\dt                                                  -- seven tables
 \d source_chunks                                     -- vector(384) + an hnsw index
 SELECT extname FROM pg_extension WHERE extname = 'vector';
 ```

@@ -1,6 +1,11 @@
 __pycache__/
 *.pyc
 .env
+# Vite also reads .env.local during a production build. A tracked one puts
+# VITE_DEV_AUTH=1 into the deployed bundle unless the host happens to define
+# that exact key, which nothing would think to do — see apps/web/.env.example.
+.env.local
+.env.*.local
 .venv/
 node_modules/
 dist/
