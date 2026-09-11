@@ -22,7 +22,7 @@ eval/
   test_cases/       Hand-written cases: source + notes + expected agent behavior
   run_eval.py       Scores the agent against test_cases
 infra/
-  migrations/       Portable Postgres schema (seven tables, pgvector extension)
+  migrations/       Portable Postgres schema (eight tables, pgvector extension)
   supabase/         Supabase-only: auth mirroring and RLS lockdown
 ```
 
@@ -49,11 +49,19 @@ Start them in this order — each depends on the one before it.
    Supabase entirely, set `VITE_DEV_AUTH=1` and leave the two `VITE_SUPABASE_*`
    values empty; that pairs with `DEV_AUTH_SECRET` in steps 2 and 3.
 5. **Agent worker** — `cd apps/agent-worker && pip install -r requirements.txt`
-   Set `ANTHROPIC_API_KEY` (or your provider of choice) and `DATABASE_URL`.
-   Then run `python worker.py` and leave it running: it is what turns files
-   uploaded in the web app into searchable chunks. Without it an upload
-   succeeds and then sits at "Queued" forever — the panel says so after a
-   few seconds, because it is the easiest thing to forget.
+   Set `ANTHROPIC_API_KEY` and `DATABASE_URL`. Then run `python worker.py`
+   and leave it running. It does two jobs:
+   - turns files uploaded in the web app into searchable chunks, and
+   - answers **Check with AI** — select a passage in the notes and click the
+     button (or Ctrl/Cmd+Alt+M), and the worker retrieves from that space's
+     sources, asks the model, and writes back a suggestion that appears
+     highlighted in the doc and as a card in the sidebar.
+
+   Without it, uploads sit at "Queued" and checks at "Checking…" forever —
+   both panels say so after a few seconds, because it is the easiest thing
+   to forget. Checks are claimed ahead of uploads, but one worker does one
+   thing at a time, so a check asked for while a long PDF is mid-ingest waits
+   for it to finish.
 
    The other entry points are one-shot:
    - `python ingest.py <path-to-pdf> <study_space_id> <user_id>` — ingest a
@@ -63,7 +71,10 @@ Start them in this order — each depends on the one before it.
      it stops before the LLM, so it costs nothing and it separates a
      retrieval problem from a prompt problem.
    - `python agent.py <document_id> <study_space_id> "<passage>"` — one
-     agent pass on demand.
+     agent pass from the command line, posted through the API (needs
+     `API_BASE_URL` and `AGENT_SERVICE_TOKEN`). The suggestion has no
+     position in the doc, so it shows unhighlighted and can only be
+     dismissed; use it to debug the agent, not to drive the app.
    - `python worker.py --requeue [study_space_id]` — re-chunk and re-embed
      material already ingested, after changing `CHUNK_SIZE_CHARS` or the
      embedding model. Re-running replaces a source's chunks rather than
@@ -98,7 +109,7 @@ The web app needs no rewrite rules on any static host — it routes on the hash
 
 ### 1. Supabase
 
-Create the project, then apply the five SQL files in the order given in
+Create the project, then apply the six SQL files in the order given in
 [`infra/README.md`](infra/README.md), which also covers the one thing that
 reliably goes wrong: **use the session pooler host on port 5432**, not
 `db.<ref>.supabase.co`, which is IPv6-only on the free tier and unreachable
@@ -233,19 +244,32 @@ collaborative editing path end to end (`apps/realtime` authenticates on
 upgrade and persists to Postgres), the ingestion pipeline end to end (upload
 in the browser → queued on the `sources` row → chunked and embedded by
 `apps/agent-worker/worker.py` → searchable with `search.py`, scoped per study
-space), and the eval harness's shape.
+space), and the agent end to end:
 
-Still stubbed, and clearly marked in code: the suggestion's document anchor
-(`yjs_relative_position_for` in `apps/agent-worker/agent.py` — the real one is
-computed client-side by the frontend trigger that does not exist yet), the
-suggestion decorations in the document and applying an accepted suggestion into
-the Yjs doc (`Editor.tsx`, `SuggestionSidebar.tsx`), and the eval test cases
-themselves — the sample is a placeholder for cases built from a course you
-actually uploaded material for.
+- **Ask** — select a passage, Check with AI. The editor turns the selection
+  into two Yjs relative positions (`apps/web/src/lib/anchors.ts`), which keep
+  pointing at the same characters however the doc is edited around them, and
+  queues a row in `agent_requests`.
+- **Answer** — the worker claims it, retrieves from that space only, and gets a
+  schema-constrained verdict from the model (`agent.py`). A verdict that cites
+  nothing it was shown is downgraded to "no suggestion" rather than shown. The
+  suggestion is written with the anchor and a snapshot of the cited source.
+- **Show** — pending suggestions are highlighted in the doc
+  (`extensions/SuggestionHighlights.ts`, view-only decorations, never document
+  content) and listed with their source in the sidebar.
+- **Decide** — Accept records the decision first (the API refuses a second
+  one, so two people accepting at once cannot insert twice), then inserts the
+  text as an ordinary edit that syncs like typing (`lib/applySuggestion.ts`).
+  Nothing the group wrote is ever replaced: a contradiction is added as a note
+  after the passage it flags.
 
-Filling those in is most of the actual project; the scaffold is here so you're
-deciding "what should the agent's prompt say" and "how good is retrieval," not
-"how do I wire a CRDT editor to a database."
+Still a placeholder: the eval test cases — the sample is a stand-in for cases
+built from a course you actually uploaded material for — and the stretch goals
+in the build plan (a background agent on a debounce, study-guide export).
+
+The agent's quality is now the actual project: what the prompt says, and how
+good retrieval is. `eval/run_eval.py` measures the first; `search.py` the
+second.
 
 ## Suggested build order
 
