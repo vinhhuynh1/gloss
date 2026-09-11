@@ -87,6 +87,113 @@ body {
   margin-right: 0.5rem;
 }
 
+/* --- suggestions in the document ---
+   One colour per type, shared by the highlight in the editor and the card's
+   left edge, so a reader can match a span to its card at a glance. */
+
+.suggestion-card {
+  border-left: 3px solid #d1d5db;
+  transition: box-shadow 0.15s;
+}
+
+.suggestion-card.suggestion-contradiction {
+  border-left-color: #dc2626;
+}
+
+.suggestion-card.suggestion-citation {
+  border-left-color: #2563eb;
+}
+
+.suggestion-card.suggestion-gap_fill {
+  border-left-color: #d97706;
+}
+
+.suggestion-card.suggestion-focused {
+  box-shadow: 0 0 0 2px #6366f1;
+}
+
+.suggestion-card p {
+  margin: 0.4rem 0;
+  font-size: 0.9rem;
+}
+
+.suggestion-quote {
+  margin: 0.4rem 0;
+  padding-left: 0.5rem;
+  border-left: 2px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.suggestion-source {
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
+  color: #4b5563;
+}
+
+.suggestion-source summary {
+  cursor: pointer;
+}
+
+.suggestion-source p {
+  white-space: pre-wrap;
+  max-height: 10rem;
+  overflow-y: auto;
+  color: #6b7280;
+}
+
+.suggestion-highlight {
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.suggestion-highlight-contradiction {
+  background: #fee2e2;
+  border-bottom: 2px solid #dc2626;
+}
+
+.suggestion-highlight-citation {
+  background: #dbeafe;
+  border-bottom: 2px solid #2563eb;
+}
+
+.suggestion-highlight-gap_fill {
+  background: #fef3c7;
+  border-bottom: 2px solid #d97706;
+}
+
+.ask-ai-button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+
+.request-chip {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.request-chip.request-open {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.request-chip.request-clear {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.request-chip.request-failed {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 /* --- auth + space navigation --- */
 
 .centered {

@@ -134,9 +134,16 @@ class Suggestion(Base):
     type: Mapped[str] = mapped_column(String)  # citation | contradiction | gap_fill
     anchor: Mapped[dict] = mapped_column(JSONB)  # serialized Yjs relative position
     proposed_text: Mapped[str] = mapped_column(Text)
+    # ON DELETE SET NULL (004_agent_requests.sql): re-chunking a source must
+    # not be blocked by a suggestion that cites one of its old chunks.
     source_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("source_chunks.id"), nullable=True
     )
+    # Copied from the cited chunk when the suggestion is written, so the
+    # citation outlives the chunk id.
+    source_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_page_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, default="pending")
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     resolved_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -145,3 +152,32 @@ class Suggestion(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     document: Mapped["Document"] = relationship(back_populates="suggestions")
+
+
+class AgentRequest(Base):
+    """One "check this passage" request from the editor.
+
+    pending | processing | done | failed. The API only ever writes 'pending'
+    (on creation); every other transition belongs to apps/agent-worker/
+    worker.py, the only process that can run retrieval. See
+    004_agent_requests.sql.
+    """
+
+    __tablename__ = "agent_requests"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    passage: Mapped[str] = mapped_column(Text)
+    anchor: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("suggestions.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)

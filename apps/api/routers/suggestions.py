@@ -3,7 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from auth import CurrentUser, require_agent
@@ -21,6 +21,10 @@ class CreateSuggestion(BaseModel):
     anchor: dict  # serialized Yjs relative position, opaque to the API
     proposed_text: str
     source_chunk_id: uuid.UUID | None = None
+    # Where the grounding passage came from — see SuggestionOut.
+    source_filename: str | None = None
+    source_page_ref: str | None = None
+    source_excerpt: str | None = None
 
 
 @router.post(
@@ -73,6 +77,12 @@ def resolve_suggestion(
     into the shared document is done client-side via a normal Yjs insert
     at the suggestion's anchor — this endpoint just records the decision,
     it does not touch document content.
+
+    Decide-once. The client applies the text only after this returns 200, so
+    this endpoint is the only thing standing between two collaborators
+    clicking Accept at the same moment and the text going in twice. The
+    conditional UPDATE makes that a single atomic check in Postgres; a
+    read-then-write here would let both requests see 'pending'.
     """
     suggestion = db.get(Suggestion, suggestion_id)
     if suggestion is None:
@@ -82,9 +92,21 @@ def resolve_suggestion(
 
     require_document(suggestion.document_id, user, db)
 
-    suggestion.status = "accepted" if body.accept else "rejected"
-    suggestion.resolved_by = user.id
-    suggestion.resolved_at = datetime.utcnow()
+    result = db.execute(
+        update(Suggestion)
+        .where(Suggestion.id == suggestion_id, Suggestion.status == "pending")
+        .values(
+            status="accepted" if body.accept else "rejected",
+            resolved_by=user.id,
+            resolved_at=datetime.utcnow(),
+        )
+    )
     db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Already handled by a collaborator",
+        )
+
     db.refresh(suggestion)
     return suggestion
