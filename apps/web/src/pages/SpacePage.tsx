@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import type { Editor as TiptapEditor } from "@tiptap/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { WebsocketProvider } from "y-websocket";
+import type * as Y from "yjs";
 
 import Editor from "../components/Editor";
 import PresenceBar from "../components/PresenceBar";
@@ -6,14 +9,88 @@ import SourcesPanel from "../components/SourcesPanel";
 import SuggestionSidebar from "../components/SuggestionSidebar";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
+import { applySuggestion } from "../lib/applySuggestion";
 import { useCollabProvider } from "../lib/useCollabProvider";
-import type { Member, SpaceDocument, StudySpace } from "../lib/types";
+import { useSuggestions } from "../lib/useSuggestions";
+import type { Member, SpaceDocument, StudySpace, Suggestion } from "../lib/types";
 
 /** Stable per-user cursor colour, so a collaborator looks the same each session. */
 function colorFromUserId(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
   return `hsl(${Math.abs(hash) % 360}, 70%, 55%)`;
+}
+
+/**
+ * The three rails: what the agent may cite, what the group wrote, what the
+ * agent proposes. Split out of SpacePage so it mounts only once the document
+ * id is known — everything about suggestions is keyed on it.
+ */
+function Workspace({
+  spaceId,
+  documentId,
+  ydoc,
+  provider,
+  identity,
+}: {
+  spaceId: string;
+  documentId: string;
+  ydoc: Y.Doc;
+  provider: WebsocketProvider;
+  identity: { name: string; color: string };
+}) {
+  const [editor, setEditor] = useState<TiptapEditor | null>(null);
+  const [anchoredIds, setAnchoredIds] = useState<string[]>([]);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+
+  const { suggestions, requests, error, notice, setNotice, ask, resolve, dismissRequest } =
+    useSuggestions(documentId, setFocusedId);
+
+  const accept = useCallback(
+    async (s: Suggestion) => {
+      // Decision first, text second. The API is what stops two collaborators
+      // who click Accept together from both inserting the same text; only the
+      // one whose decision was recorded goes on to apply it.
+      if ((await resolve(s.id, true)) !== "ok" || !editor) return;
+      const problem = applySuggestion(editor, s);
+      if (problem) setNotice(problem);
+    },
+    [editor, resolve, setNotice]
+  );
+
+  const reject = useCallback((s: Suggestion) => void resolve(s.id, false), [resolve]);
+
+  return (
+    <div className="app-layout">
+      <SourcesPanel spaceId={spaceId} />
+      {/* Kept mounted and editable in every connection state. Yjs merges
+          edits made while offline on reconnect — disabling the editor
+          would trade away the "no lost edits" property for a worse
+          experience. PresenceBar carries the status. */}
+      <Editor
+        ydoc={ydoc}
+        provider={provider}
+        user={identity}
+        suggestions={suggestions}
+        onAskAi={ask}
+        onSelectSuggestion={setFocusedId}
+        onAnchoredChange={setAnchoredIds}
+        onEditor={setEditor}
+      />
+      <SuggestionSidebar
+        suggestions={suggestions}
+        requests={requests}
+        anchoredIds={anchoredIds}
+        focusedId={focusedId}
+        error={error}
+        notice={notice}
+        onAccept={(s) => void accept(s)}
+        onReject={reject}
+        onDismissRequest={dismissRequest}
+        onFocus={setFocusedId}
+      />
+    </div>
+  );
 }
 
 export default function SpacePage({
@@ -137,17 +214,13 @@ export default function SpacePage({
       {error && <p className="error">{error}</p>}
 
       {doc && identity && provider ? (
-        <div className="app-layout">
-          {/* Left to right: what the agent may cite, what the group wrote,
-              what the agent proposes. */}
-          <SourcesPanel spaceId={spaceId} />
-          {/* Kept mounted and editable in every connection state. Yjs merges
-              edits made while offline on reconnect — disabling the editor
-              would trade away the "no lost edits" property for a worse
-              experience. PresenceBar carries the status. */}
-          <Editor ydoc={ydoc} provider={provider} user={identity} />
-          <SuggestionSidebar documentId={doc.id} />
-        </div>
+        <Workspace
+          spaceId={spaceId}
+          documentId={doc.id}
+          ydoc={ydoc}
+          provider={provider}
+          identity={identity}
+        />
       ) : (
         <p className="muted">Connecting…</p>
       )}

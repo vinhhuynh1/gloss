@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import documents, sources, study_spaces, suggestions
+from routers import agent_requests, documents, sources, study_spaces, suggestions
 
 app = FastAPI(title="Study Notes Co-Editor API")
 
@@ -28,6 +28,7 @@ app.add_middleware(
 
 app.include_router(study_spaces.router)
 app.include_router(documents.router)
+app.include_router(agent_requests.router)
 app.include_router(sources.router)
 app.include_router(suggestions.router)
 

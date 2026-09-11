@@ -104,10 +104,45 @@ class SuggestionOut(ORMModel):
     anchor: dict
     proposed_text: str
     source_chunk_id: uuid.UUID | None
+    # Where the grounding passage came from, snapshotted at creation. The
+    # sidebar shows these so a reader can check the claim, and an accepted
+    # citation is built from them rather than from model-written text.
+    source_filename: str | None
+    source_page_ref: str | None
+    source_excerpt: str | None
     status: str
     created_at: datetime
     resolved_by: uuid.UUID | None
     resolved_at: datetime | None
+
+
+# Long enough for several paragraphs, short enough that one request cannot
+# ship a whole document into a prompt. Retrieval embeds the passage as one
+# query, and a query that long matches everything a little and nothing well.
+MAX_PASSAGE_CHARS = 4000
+
+
+class CreateAgentRequest(BaseModel):
+    passage: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_PASSAGE_CHARS)
+    ]
+    # Serialized Yjs relative positions, opaque to the API — see
+    # apps/web/src/lib/anchors.ts. Shape-checked in the router, not here, so
+    # the error names the missing key.
+    anchor: dict
+
+
+class AgentRequestOut(ORMModel):
+    id: uuid.UUID
+    document_id: uuid.UUID
+    passage: str
+    status: str  # pending | processing | done | failed
+    attempts: int
+    error: str | None
+    result_type: str | None  # none | citation | contradiction | gap_fill
+    suggestion_id: uuid.UUID | None
+    created_at: datetime
+    finished_at: datetime | None
 
 
 class CreateStudySpace(BaseModel):

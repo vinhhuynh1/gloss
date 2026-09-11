@@ -26,6 +26,7 @@ ALTER TABLE public.documents           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sources             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.source_chunks       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.suggestions         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_requests      ENABLE ROW LEVEL SECURITY;
 
 -- Verify with:
 --   curl "https://<ref>.supabase.co/rest/v1/users?select=*" -H "apikey: <anon key>"

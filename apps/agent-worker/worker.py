@@ -1,17 +1,23 @@
 """
-Ingestion worker: turns uploaded files into searchable chunks.
+The worker: turns uploads into searchable chunks, and answers "check this
+passage" requests from the editor.
 
-    python worker.py                      # run forever, processing uploads
-    python worker.py --once               # drain the queue and exit
+    python worker.py                      # run forever, processing both queues
+    python worker.py --once               # drain both queues and exit
     python worker.py --requeue [space_id] # re-chunk material already ingested
 
-`sources` doubles as the queue. A dedicated broker (Redis, SQS, Celery) would
-be the reflex here, but it would be a second piece of infrastructure to run,
-deploy, and reason about in exchange for nothing this workload needs: the
-volume is a handful of files per study group, the work is idempotent, and
-Postgres is already a hard dependency of both processes. `FOR UPDATE SKIP
-LOCKED` gives the one property that actually matters — two workers never claim
-the same row — in one statement.
+`sources` and `agent_requests` double as the queues. A dedicated broker
+(Redis, SQS, Celery) would be the reflex here, but it would be a second piece
+of infrastructure to run, deploy, and reason about in exchange for nothing
+this workload needs: the volume is a handful of files and questions per study
+group, and Postgres is already a hard dependency of every process. `FOR
+UPDATE SKIP LOCKED` gives the one property that actually matters — two
+workers never claim the same row — in one statement.
+
+Agent requests are claimed before uploads, because someone is looking at a
+"Checking…" chip waiting for the answer. One worker does one thing at a time,
+though, so a long PDF that is already being ingested holds up a check until
+it finishes. Run a second worker if that starts to matter.
 
 Run exactly as many of these as you like. Unlike apps/realtime, which must
 stay at one replica, this is safely horizontal.
@@ -23,9 +29,12 @@ import time
 import uuid
 from pathlib import Path
 
+import anthropic
 import psycopg
 from dotenv import load_dotenv
+from psycopg.types.json import Jsonb
 
+from agent import check_passage, cited_chunk
 from embeddings import embed_batch
 from ingest import build_chunks, extract_pages
 
@@ -54,6 +63,11 @@ MAX_ATTEMPTS = int(os.getenv("INGEST_MAX_ATTEMPTS", "3"))
 # Postgres will take a longer error string happily; this is about the UI,
 # where a full traceback in a source card is noise rather than information.
 MAX_ERROR_CHARS = 500
+
+# Much shorter than an upload's: one agent pass is a retrieval query and one
+# model call, seconds rather than minutes, and a person is waiting on it. A
+# claim this old belongs to a worker that died.
+AGENT_STALE_CLAIM_SECONDS = int(os.getenv("AGENT_STALE_CLAIM_SECONDS", "120"))
 
 
 def reclaim_stale(conn) -> int:
@@ -185,6 +199,206 @@ def process(conn, row) -> bool:
     return True
 
 
+def reclaim_stale_agent_requests(conn) -> int:
+    """Same as reclaim_stale, for the agent queue."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE agent_requests
+               SET status = 'pending', claimed_at = NULL
+             WHERE status = 'processing'
+               AND claimed_at < now() - make_interval(secs => %s)
+            """,
+            (AGENT_STALE_CLAIM_SECONDS,),
+        )
+        return cur.rowcount
+
+
+def claim_next_agent_request(conn):
+    """Claim one pending agent request, or return None.
+
+    Same SKIP LOCKED shape as claim_next. The join to documents is here
+    rather than a second query because retrieval is scoped by study space,
+    and the request only knows its document.
+
+    A request waits while its own study space has an upload still queued or
+    being processed. Otherwise "upload the slides, then check a passage"
+    races: checks are claimed first, so the check would run against a space
+    with nothing searchable yet and fail with "no material", or quietly
+    answer from half the material. Skipping it here, rather than claiming
+    and re-queueing it, lets this same loop ingest the upload next instead of
+    re-claiming the blocked check forever.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE agent_requests ar
+               SET status = 'processing',
+                   claimed_at = now(),
+                   attempts = ar.attempts + 1
+              FROM documents d
+             WHERE ar.id = (
+                   SELECT r.id
+                     FROM agent_requests r
+                     JOIN documents rd ON rd.id = r.document_id
+                    WHERE r.status = 'pending'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM sources s
+                           WHERE s.study_space_id = rd.study_space_id
+                             AND s.status IN ('pending', 'processing')
+                      )
+                    ORDER BY r.created_at
+                      FOR UPDATE OF r SKIP LOCKED
+                    LIMIT 1
+             )
+               AND d.id = ar.document_id
+         RETURNING ar.id, ar.document_id, d.study_space_id, ar.passage,
+                   ar.anchor, ar.attempts
+            """
+        )
+        return cur.fetchone()
+
+
+def _fail_agent_request(conn, request_id, attempts: int, message: str, *, retry: bool):
+    """Back on the queue if the cause may be transient and attempts remain,
+    otherwise failed for good with a message the editor shows as-is."""
+    give_up = not retry or attempts >= MAX_ATTEMPTS
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE agent_requests
+               SET status = %s, error = %s, claimed_at = NULL,
+                   finished_at = CASE WHEN %s THEN now() END
+             WHERE id = %s
+            """,
+            (
+                "failed" if give_up else "pending",
+                message[:MAX_ERROR_CHARS],
+                give_up,
+                request_id,
+            ),
+        )
+    verb = "failed" if give_up else f"will retry ({attempts}/{MAX_ATTEMPTS})"
+    print(f"  {verb}: {message[:200]}")
+
+
+def _describe_agent_error(exc: Exception) -> tuple[str, bool]:
+    """(message for the editor, worth retrying?)
+
+    Rate limits, overloads, server errors, and dropped connections pass on
+    their own — the SDK has already retried twice by the time one reaches
+    here, and one more go under MAX_ATTEMPTS is cheap. Any other 4xx will be
+    rejected identically every time, so it fails straight away rather than
+    spending two more model calls to prove it.
+    """
+    if isinstance(exc, TypeError) and "authentication" in str(exc):
+        # No key anywhere the SDK looks. It raises this at request time, not
+        # at construction, as a TypeError rather than an API error, and it
+        # will be identical on every retry.
+        return (
+            "The agent worker has no Anthropic credentials. Set ANTHROPIC_API_KEY "
+            "in apps/agent-worker/.env and restart it.",
+            False,
+        )
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Could not reach the AI service.", True
+    if isinstance(exc, anthropic.AuthenticationError):
+        return "The agent worker's ANTHROPIC_API_KEY was rejected.", False
+    if isinstance(exc, anthropic.APIStatusError):
+        transient = exc.status_code == 429 or exc.status_code >= 500
+        return f"The AI service returned an error (HTTP {exc.status_code}).", transient
+    return f"The check failed: {exc}", True
+
+
+class _ClaimLost(Exception):
+    """Raised inside the result transaction to roll it back."""
+
+
+def process_agent_request(conn, row) -> bool:
+    """Run the agent on one claimed request. Returns True on success."""
+    request_id, document_id, study_space_id, passage, anchor, attempts = row
+    print(f"Checking passage for request {request_id}")
+
+    try:
+        result, chunks = check_passage(str(study_space_id), passage)
+    except Exception as exc:  # noqa: BLE001 — every failure is the requester's to see
+        message, retry = _describe_agent_error(exc)
+        _fail_agent_request(conn, request_id, attempts, message, retry=retry)
+        return False
+
+    if result is None:
+        _fail_agent_request(
+            conn,
+            request_id,
+            attempts,
+            "This study space has no searchable material yet. Upload course "
+            "material first, and wait for it to finish processing.",
+            retry=False,
+        )
+        return False
+
+    # The suggestion and the request's outcome commit together. Separately, a
+    # crash between them would leave a suggestion whose request goes back on
+    # the queue — and the retry would write a second copy of it.
+    try:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                suggestion_id = None
+                if result["type"] != "none":
+                    chunk = cited_chunk(result, chunks)
+                    cur.execute(
+                        """
+                        INSERT INTO suggestions
+                               (id, document_id, type, anchor, proposed_text,
+                                source_chunk_id, source_filename, source_page_ref,
+                                source_excerpt)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (
+                            str(uuid.uuid4()),
+                            document_id,
+                            result["type"],
+                            Jsonb(anchor),
+                            result["proposed_text"],
+                            result.get("source_chunk_id"),
+                            chunk["filename"] if chunk else None,
+                            chunk["page_ref"] if chunk else None,
+                            chunk["text"] if chunk else None,
+                        ),
+                    )
+                    suggestion_id = cur.fetchone()[0]
+
+                # `attempts` is this claim's token: every claim increments it,
+                # so a match means no other worker has reclaimed the row since
+                # we took it. On a mismatch the whole transaction rolls back
+                # and the other worker's answer stands.
+                cur.execute(
+                    """
+                    UPDATE agent_requests
+                       SET status = 'done', result_type = %s, reasoning = %s,
+                           suggestion_id = %s, error = NULL, claimed_at = NULL,
+                           finished_at = now()
+                     WHERE id = %s AND attempts = %s
+                    """,
+                    (
+                        result["type"],
+                        result.get("reasoning"),
+                        suggestion_id,
+                        request_id,
+                        attempts,
+                    ),
+                )
+                if cur.rowcount == 0:
+                    raise _ClaimLost()
+    except _ClaimLost:
+        print("  claim was reclaimed by another worker; discarding this result")
+        return False
+
+    print(f"  verdict: {result['type']}")
+    return True
+
+
 def requeue(conn, study_space_id: str | None) -> int:
     """Put already-ingested sources back on the queue.
 
@@ -216,9 +430,16 @@ def run(once: bool = False):
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         idle_logged = False
         while True:
-            reclaimed = reclaim_stale(conn)
+            reclaimed = reclaim_stale(conn) + reclaim_stale_agent_requests(conn)
             if reclaimed:
                 print(f"Reclaimed {reclaimed} stale claim(s)")
+
+            # Agent requests first: someone is waiting on each one.
+            request = claim_next_agent_request(conn)
+            if request is not None:
+                idle_logged = False
+                process_agent_request(conn, request)
+                continue
 
             row = claim_next(conn)
             if row is not None:
@@ -230,7 +451,9 @@ def run(once: bool = False):
                 print("Queue empty.")
                 return
             if not idle_logged:
-                print(f"Waiting for uploads (polling every {POLL_INTERVAL_SECONDS}s)…")
+                print(
+                    f"Waiting for uploads and checks (polling every {POLL_INTERVAL_SECONDS}s)…"
+                )
                 idle_logged = True
             time.sleep(POLL_INTERVAL_SECONDS)
 
