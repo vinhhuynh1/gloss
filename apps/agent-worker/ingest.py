@@ -102,6 +102,12 @@ def chunk_text(text: str) -> list[str]:
     while start < len(text):
         end = start + CHUNK_SIZE_CHARS
         chunks.append(text[start:end])
+        # Stop at the end rather than stepping back by the overlap: a section
+        # between CHUNK_SIZE - CHUNK_OVERLAP and CHUNK_SIZE long would
+        # otherwise emit a second chunk wholly contained in the first, and a
+        # short duplicate tail can out-rank the full passage for a short query.
+        if end >= len(text):
+            break
         start = end - CHUNK_OVERLAP_CHARS
     return [c.strip() for c in chunks if c.strip()]
 
