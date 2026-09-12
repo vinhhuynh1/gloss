@@ -5,6 +5,10 @@ import type { Source } from "../lib/types";
 
 const ACCEPT = ".pdf,.md,.markdown,.txt";
 const POLL_MS = 2500;
+/** Ceiling on the retry wait after a failed poll. Long enough that a stopped
+ * API isn't hammered, short enough that the panel corrects itself on its own
+ * once one comes back. */
+const MAX_RETRY_MS = 30_000;
 
 /** How long a file may sit unprocessed before we stop blaming latency and
  * start suggesting the worker isn't running. Uploading is instant and
@@ -38,6 +42,7 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     let active = true;
     let timer: number | undefined;
+    let failures = 0;
 
     // Polls only while something is actually in flight, and stops once every
     // source has settled. A permanent 2.5s poll would keep querying long
@@ -47,6 +52,7 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
       try {
         const rows = await apiFetch<Source[]>(`/study-spaces/${spaceId}/sources`);
         if (!active) return;
+        failures = 0;
         setSources(rows);
         setError(null);
         if (rows.some((s) => !isSettled(s))) {
@@ -55,6 +61,16 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
       } catch (err) {
         if (!active) return;
         setError(err instanceof Error ? err.message : "Could not load sources");
+        // Keep trying rather than ending the loop here. A stopped API is
+        // exactly when this panel is most wrong: it would otherwise sit on a
+        // stale list of "Queued" rows for the life of the page, and still be
+        // showing them after the worker had drained them. Backing off matters
+        // because the common case is an API that stays down for minutes.
+        failures += 1;
+        timer = window.setTimeout(
+          tick,
+          Math.min(POLL_MS * 2 ** failures, MAX_RETRY_MS)
+        );
       }
     }
 
