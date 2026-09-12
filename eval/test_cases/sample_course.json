@@ -1,29 +1,142 @@
 {
-  "course_name": "Sample Course — replace with a course you actually uploaded material for",
+  "course_name": "BIOL 201 — Cellular Respiration (sample course)",
+  "source_file": "sample_course_source.md",
+  "schema_notes": "Each case: `id` is stable and is what a run record and a --compare diff key on, so renaming one breaks history. `notes_passage` is the text handed to the agent as if selected in the editor. `expected_type` is the graded verdict, one of none|citation|contradiction|gap_fill. `expected_source` is the `## ` heading of the section that must back a non-none verdict — it is matched against the cited chunk's page_ref, and it is what makes grounding scorable; null when `expected_type` is none. `also_acceptable` lists defensible alternate verdicts: strict accuracy ignores it, lenient accuracy counts them as correct, and the gap between the two numbers is how much of the error is real confusion versus a genuinely fuzzy boundary. `note` is for humans and is not scored.",
   "cases": [
     {
-      "id": "correct-restatement",
+      "id": "none-correct-restatement",
       "notes_passage": "Mitochondria are the site of aerobic respiration and produce most of the cell's ATP.",
       "expected_type": "none",
-      "note": "Accurately restates the source; the agent should stay quiet, not add an unnecessary citation."
+      "expected_source": null,
+      "also_acceptable": ["citation"],
+      "note": "Accurately restates the source; the agent should stay quiet rather than add an unnecessary citation. Marked also-acceptable as `citation` because the prompt's own definition of that type ('a claim a retrieved excerpt supports, but has no citation yet') literally describes this passage — the gap between strict and lenient here measures a real ambiguity in the prompt, not a broken case."
     },
     {
-      "id": "planted-contradiction",
+      "id": "none-topic-absent",
+      "notes_passage": "The cell cycle consists of interphase followed by mitosis, and the spindle assembly checkpoint delays anaphase until every chromosome is correctly attached.",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "Hard negative. The corpus covers respiration only and says nothing about the cell cycle, so retrieval returns its five nearest chunks regardless and every one of them is irrelevant. The agent must notice that low relevance and stay quiet — this is the case that catches an agent which always finds something to say."
+    },
+    {
+      "id": "none-already-cited",
+      "notes_passage": "The Krebs cycle takes place in the mitochondrial matrix (BIOL 201 handout, \"The Krebs cycle\").",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "Correct and already carries a citation, so the one thing a `citation` verdict would add is already there. Tests that the agent reads the passage rather than pattern-matching an uncited-looking claim."
+    },
+    {
+      "id": "none-vague-but-not-wrong",
+      "notes_passage": "Respiration happens in several stages, and the later stages release more energy than the earlier ones.",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "Vague but not incorrect, and too unspecific to attach to any one excerpt. Nothing to contradict and nothing precise enough to cite."
+    },
+    {
+      "id": "none-correct-fermentation",
+      "notes_passage": "Fermentation regenerates NAD+ so that glycolysis can keep running when no oxygen is available.",
+      "expected_type": "none",
+      "expected_source": null,
+      "also_acceptable": ["citation"],
+      "note": "A second accurate restatement, on a different section from none-correct-restatement, so the 'stay quiet' dimension is not measured entirely against one part of the corpus."
+    },
+    {
+      "id": "none-outside-knowledge-trap",
+      "notes_passage": "Cyanide poisoning is treated with hydroxocobalamin, which binds cyanide directly and is excreted in the urine.",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "The system prompt forbids using outside knowledge even when it is correct. The corpus mentions cyanide only as a Complex IV inhibitor and says nothing about treating poisoning, so retrieval lands on the respirometry section and the claim is neither supported nor contradicted by anything shown. A model answering from its own knowledge will produce a confident citation or gap_fill here; a grounded one stays quiet."
+    },
+
+    {
+      "id": "contra-mitochondria-plants",
       "notes_passage": "Mitochondria are found only in animal cells, not in plants.",
       "expected_type": "contradiction",
-      "note": "Source material states mitochondria are present in both plant and animal cells."
+      "expected_source": "Overview of the mitochondrion",
+      "note": "The source states mitochondria are present in both plant and animal cells, and that plants photosynthesise in addition to respiring rather than instead of it."
     },
     {
-      "id": "gap-fill",
+      "id": "contra-glycolysis-location",
+      "notes_passage": "Glycolysis takes place inside the mitochondrial matrix, which is why the pathway needs oxygen.",
+      "expected_type": "contradiction",
+      "expected_source": "Glycolysis and the link reaction",
+      "note": "Two errors in one sentence: the source puts glycolysis in the cytosol and says explicitly that it does not require oxygen."
+    },
+    {
+      "id": "contra-fermentation-yield",
+      "notes_passage": "Fermentation produces a large amount of ATP directly, which is how cells keep going without oxygen.",
+      "expected_type": "contradiction",
+      "expected_source": "Fermentation and anaerobic respiration",
+      "note": "The source states in as many words that fermentation yields no ATP of its own and that the anaerobic total is the net 2 per glucose from glycolysis."
+    },
+    {
+      "id": "contra-chloroplast-direction",
+      "notes_passage": "In chloroplasts, protons are pumped out of the thylakoid lumen into the stroma, and ATP is made as they flow back into the lumen.",
+      "expected_type": "contradiction",
+      "expected_source": "Chemiosmosis in chloroplasts",
+      "note": "The direction is reversed: the source has protons pumped into the lumen and ATP made as they leave it for the stroma. Deliberately a near-miss test as well as a contradiction test — the mitochondrial ETC section describes a gradient in the opposite orientation, so an agent grounding this in the wrong section will produce a confident contradiction citing the wrong page_ref, which scores as a type hit and a grounding miss."
+    },
+
+    {
+      "id": "gap-krebs-yield",
       "notes_passage": "The Krebs cycle happens in the mitochondrial matrix.",
       "expected_type": "gap_fill",
-      "note": "Source material also covers the cycle's ATP/NADH yield in depth; notes don't mention it at all."
+      "expected_source": "The Krebs cycle",
+      "also_acceptable": ["citation"],
+      "note": "True as far as it goes, but the source covers the per-turn yield (3 NADH, 1 FADH2, 1 GTP, 2 CO2) and the per-glucose doubling in depth, and the notes do not mention any of it."
     },
     {
-      "id": "missing-citation",
-      "notes_passage": "The electron transport chain generates a proton gradient used to synthesize ATP.",
+      "id": "gap-uncouplers",
+      "notes_passage": "Electron transport and ATP synthesis are coupled to one another.",
+      "expected_type": "gap_fill",
+      "expected_source": "Uncouplers and respiratory control",
+      "also_acceptable": ["citation"],
+      "note": "The source spends a section on what happens when that coupling is broken — DNP, thermogenin, heat instead of ATP — and the notes stop at the bare statement."
+    },
+    {
+      "id": "gap-atp-shuttles",
+      "notes_passage": "Aerobic respiration produces roughly 30 to 32 ATP per glucose, though the exact number varies.",
+      "expected_type": "gap_fill",
+      "expected_source": "Total ATP accounting",
+      "also_acceptable": ["citation"],
+      "note": "The notes flag that the number varies without saying why. The source attributes the whole 30-versus-32 range to which shuttle carries the cytosolic NADH in, which is exactly the missing explanation."
+    },
+    {
+      "id": "gap-mtdna-heteroplasmy",
+      "notes_passage": "Mitochondria have their own circular DNA, separate from the DNA in the nucleus.",
+      "expected_type": "gap_fill",
+      "expected_source": "Mitochondrial DNA and endosymbiotic theory",
+      "also_acceptable": ["citation"],
+      "note": "The source covers the 37 genes, maternal inheritance, and heteroplasmy with its tissue-dependent threshold. The notes have the bare fact and none of the consequences."
+    },
+
+    {
+      "id": "cite-proton-gradient",
+      "notes_passage": "The electron transport chain generates a proton gradient that is used to synthesise ATP.",
       "expected_type": "citation",
-      "note": "Correct claim, directly supported by a specific source passage, but stated with no citation."
+      "expected_source": "The electron transport chain and chemiosmosis",
+      "note": "Correct, directly supported, and uncited. The strongest retrieval test in the set: 'The proton-motive force', 'Chemiosmosis in chloroplasts', and 'Substrate-level versus oxidative phosphorylation' all discuss proton gradients and ATP synthesis, so four sections compete and only one is the passage this sentence restates."
+    },
+    {
+      "id": "cite-brown-fat",
+      "notes_passage": "Brown adipose tissue produces heat rather than ATP by letting protons leak back across the inner membrane.",
+      "expected_type": "citation",
+      "expected_source": "Uncouplers and respiratory control",
+      "note": "Correct and supported by the thermogenin/UCP1 passage, with no citation attached."
+    },
+    {
+      "id": "cite-substrate-level",
+      "notes_passage": "Most of a cell's ATP is made indirectly, from energy stored briefly as a proton gradient, rather than handed straight from a substrate to ADP.",
+      "expected_type": "citation",
+      "expected_source": "Substrate-level versus oxidative phosphorylation",
+      "note": "A second near-miss test. The claim is the explicit contrast drawn in this section, but the ETC section also describes the gradient driving ATP synthesis, so grounding this in the ETC section is the plausible wrong answer."
+    },
+    {
+      "id": "cite-rq-fat",
+      "notes_passage": "A respiratory quotient of about 0.7 indicates that fat is being oxidised.",
+      "expected_type": "citation",
+      "expected_source": "Measuring respiration in the laboratory",
+      "note": "Narrow, specific, and supported by exactly one sentence in one section. The easy end of the retrieval range — if this one misses, retrieval is broken rather than merely imprecise."
     }
   ]
 }
