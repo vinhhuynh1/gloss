@@ -116,3 +116,5 @@ if __name__ == "__main__":
     print()
     print("Run the eval with:")
     print(f"  STUDY_SPACE_ID={study_space_id} python ../../eval/run_eval.py")
+    print("or, in PowerShell:")
+    print(f'  $env:STUDY_SPACE_ID="{study_space_id}"; python ../../eval/run_eval.py')

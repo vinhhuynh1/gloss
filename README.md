@@ -21,6 +21,9 @@ packages/
 eval/
   test_cases/       Hand-written cases: source + notes + expected agent behavior
   run_eval.py       Scores the agent against test_cases
+  judge.py          Optional: asks the model whether a citation really supports
+  results/          One JSON record per run, with the config that produced it
+  CHANGELOG.md      What each change did to the score
 infra/
   migrations/       Portable Postgres schema (eight tables, pgvector extension)
   supabase/         Supabase-only: auth mirroring and RLS lockdown
@@ -79,9 +82,37 @@ Start them in this order — each depends on the one before it.
      material already ingested, after changing `CHUNK_SIZE_CHARS` or the
      embedding model. Re-running replaces a source's chunks rather than
      duplicating them, so this is safe to repeat.
-6. **Eval** — `cd eval && python run_eval.py` runs the agent against
-   `test_cases/sample_course.json` and prints a score. Replace the sample
-   with test cases built from a course you actually uploaded material for.
+6. **Eval** — scores the agent against `test_cases/sample_course.json`, 18
+   hand-written cases over the sample course. It needs a study space that
+   already has material ingested, because retrieval is scoped to one:
+
+   ```sh
+   cd apps/agent-worker && python seed_demo.py    # prints a study_space_id
+   STUDY_SPACE_ID=<uuid> python ../eval/run_eval.py
+   ```
+
+   In PowerShell the first line is `$env:STUDY_SPACE_ID="<uuid>"; python ...`
+   — `VAR=value cmd` is not a thing there, and the script exits with that
+   reminder rather than scoring every case against an empty retrieval.
+
+   It reports five numbers, not one. Type accuracy and a confusion matrix
+   answer "did it reach the right verdict"; flag precision and recall split
+   that into "did it flag what it should" and "did it stay quiet where it
+   should"; grounding accuracy asks whether the verdict cited the section
+   that actually backs it. The fifth, retrieval recall@k, is the one that
+   tells you where to look: if the right section is not even being retrieved,
+   no amount of prompt work will help, and `search.py` is where you go next.
+
+   Every run drops a record in `eval/results/` carrying the model, prompt
+   hash, `top_k`, chunk size, and a fingerprint of the corpus, so a score can
+   always be traced back to the code that produced it. `--compare latest`
+   diffs against the previous run and names the cases that moved. Add a line
+   to `eval/CHANGELOG.md` each time — the build plan asks for that log
+   specifically, and one change at a time is the only way it means anything.
+
+   `--judge` adds a second model call per suggestion asking whether the cited
+   excerpt really supports it. Useful for auditing a run before you write it
+   up; not something to hillclimb against, since the judge drifts too.
 
 > Testing collaboration in two tabs of the **same** browser profile proves
 > nothing: y-websocket syncs same-origin tabs directly over BroadcastChannel,
@@ -263,13 +294,45 @@ space), and the agent end to end:
   Nothing the group wrote is ever replaced: a contradiction is added as a note
   after the passage it flags.
 
-Still a placeholder: the eval test cases — the sample is a stand-in for cases
-built from a course you actually uploaded material for — and the stretch goals
-in the build plan (a background agent on a debounce, study-guide export).
+Also real: the eval harness. Eighteen hand-written cases score the agent on
+whether it flagged what it should, stayed quiet where it should, and cited a
+section that actually backs the claim, and every run leaves a record of the
+config behind it.
+
+Still a placeholder: the **course material**. The eighteen cases are written
+against `test_cases/sample_course_source.md`, a synthetic cellular-respiration
+handout, not against a course you uploaded — so the score says the agent works
+on material shaped like a course, which is weaker than what the build plan
+asks for. Swapping in real slides means a new source file, a re-seed, and
+rewriting the cases against it; the harness needs no changes. Also still
+open: the stretch goals (a background agent on a debounce, study-guide
+export).
+
+**Scored, and improved once against the score.** The baseline and four measured
+changes are in `eval/CHANGELOG.md`, one entry each, with the run record behind
+every number:
+
+| | baseline | now |
+|---|---|---|
+| type accuracy | 67% | 72% |
+| flag precision | 71% | 80% |
+| flag recall | 100% | 100% |
+| grounding accuracy | 83% | 92% |
+| retrieval recall@k | 92% | 92% |
+
+The log is more useful than the table. One queued change was dropped without
+being run, because the baseline showed it aimed at a failure mode that never
+occurred. One change made the score *worse* and was kept, because what it
+exposed was a prompt bug rather than a bad fix — and the next change returned
+the points. Retrieval recall@k never moved across five runs: every point came
+from the prompt, which is worth knowing before spending anything on the
+retriever.
 
 The agent's quality is now the actual project: what the prompt says, and how
-good retrieval is. `eval/run_eval.py` measures the first; `search.py` the
-second.
+good retrieval is. `eval/run_eval.py` measures both and keeps them apart —
+grounding accuracy for the prompt, retrieval recall@k for the retriever — so
+a bad score points somewhere. `search.py` is how you dig into the second
+without spending a token.
 
 ## Suggested build order
 
