@@ -203,7 +203,13 @@ def retry_source(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Source is already {source.status}",
         )
-    if source.file_data is None:
+    # Asked of the database rather than read off the object: file_data is
+    # deferred (see models.py), so touching the attribute would fetch the whole
+    # PDF just to compare it against None. This returns a boolean.
+    has_bytes = db.scalar(
+        select(Source.file_data.is_not(None)).where(Source.id == source_id)
+    )
+    if not has_bytes:
         # Rows written by the ingest.py CLI never carried their bytes here.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
