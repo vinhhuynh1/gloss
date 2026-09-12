@@ -121,7 +121,7 @@ Start them in this order — each depends on the one before it.
 
 ## Deploy
 
-Four pieces, three hosts, and one of them stays on your laptop.
+Four pieces across three hosts.
 
 | | Where | Root directory | Config in repo |
 |---|---|---|---|
@@ -129,11 +129,33 @@ Four pieces, three hosts, and one of them stays on your laptop.
 | API | Railway service | `apps/api` | `Dockerfile`, `railway.json` |
 | Realtime | Railway service | `apps/realtime` | `Dockerfile`, `railway.json` |
 | Web | Vercel | `apps/web` | none needed |
-| Agent worker | **not deployed** — runs locally against the hosted database | — | — |
+| Agent worker | Railway service | `apps/agent-worker` | `Dockerfile`, `railway.json` |
 
-The worker stays local because `sentence-transformers` pulls in torch; point
-its `DATABASE_URL` and `API_BASE_URL` at the hosted values and run it from your
-machine. `apps/agent-worker/.env.example` says the same thing.
+The worker is the one piece that can also just run on your laptop against the
+hosted database — it only talks *outbound*, to Postgres and the Claude API, so
+it needs no inbound access. Deploy it when someone else has to be able to use
+the app without you running anything.
+
+Two things about its image. `sentence-transformers` depends on torch, and the
+default PyPI wheel bundles a CUDA runtime that is useless on a CPU host and
+roughly doubles the image, so the Dockerfile installs the CPU build from
+PyTorch's own index **before** `requirements.txt`. The model weights are baked
+in at build time rather than fetched on first use, because the download is an
+unauthenticated Hugging Face request that is rate-limited. It still comes to
+~2.2 GB; that is the price of embedding locally, and the way out is a hosted
+embedding API, which would change the vectors and so needs a re-ingest and a
+new `VECTOR(...)` dimension in three places (see `embeddings.py`).
+
+It is a worker, not a server: no port, no domain, and `railway.json`
+deliberately has no `healthcheckPath` — Railway would wait forever for a port
+that never opens. Replicas are safe if you ever want more than one, because
+`claim_next()` claims rows with `FOR UPDATE SKIP LOCKED` and `reclaim_stale()`
+returns rows abandoned by a worker that died mid-deploy.
+
+It needs exactly two variables — `DATABASE_URL` (the plain `postgresql://`
+form, same as realtime) and `ANTHROPIC_API_KEY`. Not `API_BASE_URL` and not
+`AGENT_SERVICE_TOKEN`: those belong to `agent.py`'s command-line path, which
+posts through the API. The worker writes suggestions straight to Postgres.
 
 The web app needs no rewrite rules on any static host — it routes on the hash
 (`src/lib/useHashRoute.ts`), so `/` is the only path ever requested.
