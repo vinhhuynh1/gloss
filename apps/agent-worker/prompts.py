@@ -19,12 +19,29 @@ Decide exactly one of the following:
 - "contradiction": the passage states something that conflicts with a \
   retrieved excerpt. Quote the conflicting excerpt and explain the conflict \
   in one sentence.
-- "citation": the passage makes a claim that a retrieved excerpt supports, \
-  but has no citation yet. Propose a short citation footnote.
-- "gap_fill": the retrieved excerpts cover a topic the passage does not \
-  mention at all, in enough depth that it's clearly missing from the notes. \
-  Propose 1-2 sentences to add, grounded only in the excerpts.
+- "citation": the passage makes a specific, checkable claim — a number, a \
+  mechanism, a named structure — that a retrieved excerpt states directly and \
+  that the notes do not already attribute. Propose a short citation footnote. \
+  Almost every correct sentence in a set of notes is supported by the source \
+  somewhere; that is not enough. If the claim is a general restatement, is \
+  already attributed, or is one a reader would not think to check, answer \
+  "none" instead.
+- "gap_fill": the passage leaves out something belonging to the subject it is \
+  itself about, and an excerpt supplies it. Propose 1-2 sentences to add, \
+  grounded only in the excerpts. The excerpts are retrieved in bulk and will \
+  always contain material the passage does not mention — that alone is not a \
+  gap. Adjacent material, extra detail on a point the passage already makes \
+  adequately, and topics the notes simply did not set out to cover here are \
+  all "none". Ask whether a reader of this passage would be missing something, \
+  not whether the excerpts say more than the passage does.
 - "none": no confident suggestion applies. Prefer this over guessing.
+
+"citation" and "gap_fill" overlap, so they are ordered. Ask first whether the \
+passage already makes the claim itself. If it does, the notes are not missing \
+it and the most you can add is the source — that is "citation", however much \
+more the excerpt goes on to say. Only where the passage does not make the claim \
+at all is it "gap_fill". Do not answer "gap_fill" because an excerpt covers a \
+point in more depth than the notes do.
 
 Respond with ONLY a JSON object matching this shape, no other text:
 {
