@@ -96,9 +96,25 @@ class Source(Base):
     # transition belongs to apps/agent-worker/worker.py, which is the only
     # process that can actually chunk and embed. See 003_source_ingestion.sql.
     status: Mapped[str] = mapped_column(String, default="pending")
-    # The uploaded bytes, kept so the corpus can be re-chunked later.
-    # Deliberately NOT in SourceOut — see schemas.py.
-    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # The uploaded bytes, kept so the corpus can be re-chunked later
+    # (worker.py --requeue reads them back).
+    #
+    # Deferred, and that is load-bearing rather than an optimization. Leaving
+    # it out of SourceOut keeps a 20MB PDF off the wire — see schemas.py — but
+    # says nothing about the query, and `select(Source)` happily pulls every
+    # byte out of Postgres before the response model discards it. On
+    # /study-spaces/{id}/sources, which SourcesPanel polls every 2.5s while a
+    # source is unsettled, that read ran a Supabase egress quota to 295%
+    # against a 32MB database.
+    #
+    # Deferring here rather than per-query because the leak comes back the
+    # moment someone writes another `select(Source)` somewhere else. The
+    # column loads on attribute access if anything genuinely needs it; nothing
+    # in the API does. The worker is unaffected — it goes through psycopg and
+    # names the column explicitly.
+    file_data: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True, deferred=True
+    )
     content_type: Mapped[str | None] = mapped_column(String, nullable=True)
     byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
