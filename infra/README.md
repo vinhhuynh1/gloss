@@ -101,6 +101,36 @@ and on SIGTERM, so give it a few seconds after the last keystroke.
 touches the same column and will clobber a live session — see the note in
 `apps/api/routers/documents.py`.
 
+### Egress is the free tier's tight constraint
+
+Storage is not what runs out first — reads are. The free tier meters bytes
+leaving the database, and this app's read volume is dominated by poll loops,
+not by people: the sources panel polls every 2.5s while a file is processing,
+and the suggestion sidebar polls two endpoints every 2–10s for as long as a tab
+stays open. A 32MB database served 295% of a month's egress that way.
+
+What made it expensive was not the number of requests but what each one read.
+Three columns here are unbounded — `sources.file_data` (up to 20MB per row),
+`documents.crdt_snapshot` (a Yjs update, which grows with edit history and
+never shrinks), and `source_chunks.embedding` (384 floats, several KB per row
+on the wire). Leaving a column out of the response model does nothing about
+this: `select(Source)` and `db.get(Document, ...)` fetch every column the
+mapper knows about, and Pydantic discards the ones it does not expose *after*
+Postgres has already sent them.
+
+So the rule is a query-side one. `file_data` and `crdt_snapshot` are
+`deferred=True` on the mapper in `apps/api/models.py` — on the mapper rather
+than per query, because both are reached from several call sites and a
+per-query fix regresses the moment someone writes another `select(Source)`.
+The few places that genuinely want one load it by naming it, and the comments
+on those two columns say which places those are. `embedding` needs no deferral
+because nothing selects a `SourceChunk` entity at all: the worker's retrieval
+query names the columns it wants and leaves the vector in the `ORDER BY`, and
+the API only ever counts chunks.
+
+The `octet_length(crdt_snapshot)` query above is the way to see the stakes —
+that number, doubled, is what one idle tick of the sidebar used to cost.
+
 ## Two projects
 
 The Supabase free tier allows two active projects. Use one for `dev` and one

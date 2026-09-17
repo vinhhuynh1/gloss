@@ -175,6 +175,13 @@ resets the button, which reads as a dead app. The free tier's shared SMTP is
 rate-limited to a couple of messages an hour, so this is not a setting to
 leave on and hope.
 
+One more thing worth reading before you put load on it: the free tier's tight
+constraint is **egress, not storage**, and this app reads on poll loops rather
+than on clicks. `infra/README.md` has the arithmetic and the rule it produced —
+the short version is that an unbounded column is deferred on the mapper in
+`apps/api/models.py`, because leaving it out of the response model keeps it off
+the wire but not out of the query.
+
 Check how the project signs its JWTs while you are there:
 
 ```sh

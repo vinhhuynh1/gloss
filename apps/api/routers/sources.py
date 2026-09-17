@@ -222,7 +222,11 @@ def retry_source(
     source.claimed_at = None
     db.commit()
     db.refresh(source)
-    return _to_out(source, len(source.chunks))
+    # _chunk_counts, not len(source.chunks): the latter lazy-loads the whole
+    # relationship — every chunk's text and its 384-dimension embedding, which
+    # psycopg moves as a text literal several KB wide — to arrive at one
+    # integer. On a lecture deck that is megabytes read per press of Retry.
+    return _to_out(source, _chunk_counts(db, [source_id]).get(source_id, 0))
 
 
 @router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
