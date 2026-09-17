@@ -25,7 +25,7 @@ eval/
   results/          One JSON record per run, with the config that produced it
   CHANGELOG.md      What each change did to the score
 infra/
-  migrations/       Portable Postgres schema (eight tables, pgvector extension)
+  migrations/       Portable Postgres schema (nine tables, pgvector extension)
   supabase/         Supabase-only: auth mirroring and RLS lockdown
 ```
 
@@ -53,18 +53,21 @@ Start them in this order — each depends on the one before it.
    values empty; that pairs with `DEV_AUTH_SECRET` in steps 2 and 3.
 5. **Agent worker** — `cd apps/agent-worker && pip install -r requirements.txt`
    Set `ANTHROPIC_API_KEY` and `DATABASE_URL`. Then run `python worker.py`
-   and leave it running. It does two jobs:
-   - turns files uploaded in the web app into searchable chunks, and
+   and leave it running. It does three jobs:
+   - turns files uploaded in the web app into searchable chunks,
    - answers **Check with AI** — select a passage in the notes and click the
      button (or Ctrl/Cmd+Alt+M), and the worker retrieves from that space's
      sources, asks the model, and writes back a suggestion that appears
-     highlighted in the doc and as a card in the sidebar.
+     highlighted in the doc and as a card in the sidebar, and
+   - writes a **Study guide** — the whole notes document turned into a
+     revision sheet where every point carries the source excerpt it came
+     from, laid out for the browser's print-to-PDF.
 
-   Without it, uploads sit at "Queued" and checks at "Checking…" forever —
-   both panels say so after a few seconds, because it is the easiest thing
-   to forget. Checks are claimed ahead of uploads, but one worker does one
-   thing at a time, so a check asked for while a long PDF is mid-ingest waits
-   for it to finish.
+   Without it, uploads sit at "Queued", checks at "Checking…" and guides at
+   "Writing study guide…" forever — every panel says so after a few seconds,
+   because it is the easiest thing to forget. Checks are claimed first, then
+   guides, then uploads; but one worker does one thing at a time, so a check
+   asked for while a long PDF is mid-ingest waits for it to finish.
 
    The other entry points are one-shot:
    - `python ingest.py <path-to-pdf> <study_space_id> <user_id>` — ingest a
@@ -162,7 +165,7 @@ The web app needs no rewrite rules on any static host — it routes on the hash
 
 ### 1. Supabase
 
-Create the project, then apply the six SQL files in the order given in
+Create the project, then apply the seven SQL files in the order given in
 [`infra/README.md`](infra/README.md), which also covers the one thing that
 reliably goes wrong: **use the session pooler host on port 5432**, not
 `db.<ref>.supabase.co`, which is IPv6-only on the free tier and unreachable
@@ -334,8 +337,14 @@ handout, not against a course you uploaded — so the score says the agent works
 on material shaped like a course, which is weaker than what the build plan
 asks for. Swapping in real slides means a new source file, a re-seed, and
 rewriting the cases against it; the harness needs no changes. Also still
-open: the stretch goals (a background agent on a debounce, study-guide
-export).
+open: a background agent on a debounce, and contradiction detection across
+two different uploaded sources rather than within one.
+
+The study-guide export is built. `python eval/run_eval.py --guide` scores it,
+but on its own two numbers — citation validity and section coverage — written
+to a `guide-`prefixed record and deliberately kept out of the five metrics
+below, which are a time series going back to the baseline and would stop
+meaning anything if a sixth column appeared halfway along.
 
 **Scored, and improved once against the score.** The baseline and four measured
 changes are in `eval/CHANGELOG.md`, one entry each, with the run record behind

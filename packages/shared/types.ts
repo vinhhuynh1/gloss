@@ -84,3 +84,49 @@ export interface AgentRequest {
   created_at: string;
   finished_at: string | null;
 }
+/** Generation state of a study guide. Same queue as an agent request, and the
+ * API only ever creates it as pending — see apps/agent-worker/worker.py. */
+export type StudyGuideStatus = "pending" | "processing" | "done" | "failed";
+
+/** One cited line of a guide. The source fields are copied from the chunk at
+ * write time, so a citation survives the next re-chunk — same reasoning as
+ * the snapshot columns on Suggestion. */
+export interface GuidePoint {
+  text: string;
+  source_chunk_id: string;
+  source_filename: string | null;
+  source_page_ref: string | null;
+  source_excerpt: string | null;
+}
+
+export interface GuideTerm {
+  term: string;
+  definition: string;
+  source_chunk_id: string;
+  source_filename: string | null;
+  source_page_ref: string | null;
+  source_excerpt: string | null;
+}
+
+export interface Guide {
+  title: string;
+  sections: { heading: string; points: GuidePoint[] }[];
+  key_terms: GuideTerm[];
+}
+
+/** What the poll returns: status only, never the guide itself. Fetching the
+ * finished guide is a second call to .../study-guide/content. */
+export interface StudyGuideStatusRow {
+  id: string;
+  document_id: string;
+  status: StudyGuideStatus;
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface StudyGuideRow extends StudyGuideStatusRow {
+  guide: Guide | null;
+}
+
