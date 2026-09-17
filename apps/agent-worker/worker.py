@@ -400,6 +400,27 @@ def process_agent_request(conn, row) -> bool:
     return True
 
 
+def study_guides_available(conn) -> bool:
+    """Does the study_guides table exist yet?
+
+    Checked once at startup so that a deploy which got ahead of its migration
+    costs the study-guide queue and nothing else. That ordering is ordinary —
+    Railway redeploys on a merge to main, and infra/migrations is applied by
+    hand — and the first time it happened an UndefinedTable raised out of
+    reclaim_stale_study_guides, out of run(), and crash-looped the worker every
+    seven seconds. Uploads stopped being chunked and Check with AI stopped
+    answering, for a queue that had no rows in it and a feature nobody could
+    reach yet.
+
+    Not a try/except around the loop body: that would swallow a dropped
+    connection, a permissions problem and a genuine bug alike, and turn each
+    into a hot spin. This fails in exactly one known way and names the fix.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.study_guides') IS NOT NULL")
+        return bool(cur.fetchone()[0])
+
+
 def reclaim_stale_study_guides(conn) -> int:
     """Same as reclaim_stale, for the study-guide queue."""
     with conn.cursor() as cur:
@@ -550,12 +571,20 @@ def run(once: bool = False):
     # of claiming a row at a time.
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         idle_logged = False
+
+        guides_on = study_guides_available(conn)
+        if not guides_on:
+            print("WARNING: no study_guides table — study guides are OFF "
+                  "for this process.")
+            print("         Apply infra/migrations/005_study_guides.sql, re-run")
+            print("         infra/supabase/011_lockdown.sql on Supabase, then")
+            print("         restart this worker. Uploads and checks are "
+                  "unaffected.")
+
         while True:
-            reclaimed = (
-                reclaim_stale(conn)
-                + reclaim_stale_agent_requests(conn)
-                + reclaim_stale_study_guides(conn)
-            )
+            reclaimed = reclaim_stale(conn) + reclaim_stale_agent_requests(conn)
+            if guides_on:
+                reclaimed += reclaim_stale_study_guides(conn)
             if reclaimed:
                 print(f"Reclaimed {reclaimed} stale claim(s)")
 
@@ -569,7 +598,7 @@ def run(once: bool = False):
             # Guides next. Someone is waiting on these too, but a guide is one
             # long call where a check is a short one, so letting checks past
             # keeps the interactive path interactive.
-            guide = claim_next_study_guide(conn)
+            guide = claim_next_study_guide(conn) if guides_on else None
             if guide is not None:
                 idle_logged = False
                 process_study_guide(conn, guide)
@@ -585,10 +614,10 @@ def run(once: bool = False):
                 print("Queue empty.")
                 return
             if not idle_logged:
-                print(
-                    "Waiting for uploads, checks and guides "
-                    f"(polling every {POLL_INTERVAL_SECONDS}s)…"
+                jobs = "uploads, checks and guides" if guides_on else (
+                    "uploads and checks (guides OFF)"
                 )
+                print(f"Waiting for {jobs} (polling every {POLL_INTERVAL_SECONDS}s)…")
                 idle_logged = True
             time.sleep(POLL_INTERVAL_SECONDS)
 
