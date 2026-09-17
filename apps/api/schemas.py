@@ -145,6 +145,53 @@ class AgentRequestOut(ORMModel):
     finished_at: datetime | None
 
 
+# The whole notes document, where MAX_PASSAGE_CHARS is one selection, so this
+# is larger by the same order. Still a cap: the document is embedded section by
+# section and then sent whole in one prompt, so an unbounded value turns one
+# click into an unbounded number of embeddings and a prompt no context window
+# holds. A document this long is also past the point where one guide is the
+# right shape for it.
+MAX_NOTES_CHARS = 40000
+
+
+class CreateStudyGuide(BaseModel):
+    # Sent by the client, not read from documents.crdt_snapshot, because that
+    # column is a Yjs update and nothing in Python can decode one. Same
+    # arrangement as CreateAgentRequest.passage.
+    notes: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
+    ]
+
+
+class StudyGuideStatusOut(ORMModel):
+    """Is it ready yet — the shape the editor polls.
+
+    Deliberately carries no `guide` and no `notes`: both are deferred on the
+    model, and a poll that answers "still working" must not drag the finished
+    guide across the wire to say so.
+    """
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    status: str  # pending | processing | done | failed
+    attempts: int
+    error: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class StudyGuideOut(StudyGuideStatusOut):
+    """The finished guide, fetched once after the poll reports 'done'.
+
+    `guide` is left as a plain dict rather than modelled field by field. Its
+    shape is the model's structured output (see GUIDE_SCHEMA in
+    apps/agent-worker/study_guide.py), and declaring it twice would mean two
+    places to change and a 500 for any guide written before the change.
+    """
+
+    guide: dict | None
+
+
 class CreateStudySpace(BaseModel):
     course_name: str
 

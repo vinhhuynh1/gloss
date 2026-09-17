@@ -64,9 +64,12 @@ class Document(Base):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     study_space_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("study_spaces.id"))
-    # Latest Yjs document state. The API treats this as an opaque blob —
-    # only the frontend (via Yjs) and the agent worker's retrieval step
-    # ever need to interpret it.
+    # Latest Yjs document state. The API treats this as an opaque blob, and
+    # so does everything else in Python — decoding a Yjs update needs a CRDT
+    # library neither service carries. apps/realtime is the only process in
+    # the stack that can read it. The agent worker never touches this column:
+    # the text it works from is sent by the browser, as agent_requests.passage
+    # and study_guides.notes.
     #
     # WRITER OF RECORD: apps/realtime. It flushes here on a debounce and on
     # shutdown. PUT /documents/{id}/snapshot writes the same column and is a
@@ -210,5 +213,38 @@ class AgentRequest(Base):
     suggestion_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("suggestions.id"), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class StudyGuide(Base):
+    """One generated revision guide for a document.
+
+    pending | processing | done | failed, and the same queue-as-table as
+    AgentRequest — see 005_study_guides.sql. The API only ever writes
+    'pending'; apps/agent-worker/worker.py owns every other transition,
+    because generating a guide needs retrieval and retrieval needs the
+    embedding model.
+    """
+
+    __tablename__ = "study_guides"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    # The document's text as the browser read it. Deferred: this is the whole
+    # notes document, the status endpoint is polled while a guide runs, and
+    # nothing in the API ever reads it back — only the worker does, over
+    # psycopg. Same reasoning as file_data and crdt_snapshot above.
+    notes: Mapped[str] = mapped_column(Text, deferred=True)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The guide itself, with each point's citation denormalized onto it.
+    # Deferred for the same reason as notes: the poll asks "is it ready yet",
+    # and shipping the whole guide on every tick to answer that is how the
+    # sources list ran an egress quota to 295%.
+    guide: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)

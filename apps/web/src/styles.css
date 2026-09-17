@@ -4,9 +4,10 @@ body {
   background: #f9fafb;
 }
 
+/* 140px of header and invite form, plus the workspace toolbar under them. */
 .app-layout {
   display: flex;
-  height: calc(100vh - 140px);
+  height: calc(100vh - 140px - 3.45rem);
   border-top: 1px solid #e5e7eb;
 }
 
@@ -522,4 +523,128 @@ button:disabled {
   margin-right: 0.4rem;
   padding: 0.15rem 0.45rem;
   font-size: 0.75rem;
+}
+
+/* --- study guide --- */
+
+/* The toolbar sits between the header and the three rails, so the rails lose
+   its height. .app-layout's calc is the one place that number lives. */
+.workspace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.5rem;
+  background: white;
+  border-top: 1px solid #e5e7eb;
+  min-height: 2.25rem;
+}
+
+.workspace-toolbar .muted,
+.workspace-toolbar .error {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.study-guide {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.study-guide-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.study-guide-sheet h1 {
+  font-size: 1.6rem;
+  margin: 0 0 0.35rem;
+}
+
+.study-guide-sheet h2 {
+  font-size: 1.1rem;
+  margin: 2rem 0 0.6rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.study-guide-sheet li {
+  margin-bottom: 0.45rem;
+  line-height: 1.5;
+}
+
+.study-guide-sheet dt {
+  font-weight: 600;
+  margin-top: 0.7rem;
+}
+
+.study-guide-sheet dd {
+  margin: 0.15rem 0 0;
+  line-height: 1.5;
+}
+
+/* The citation number. Small, and not a link — on paper a link is nothing,
+   and the Sources list below is the destination either way. */
+.study-guide-sheet .cite {
+  font-size: 0.7em;
+  color: #6b7280;
+  margin-left: 0.15em;
+}
+
+.study-guide-sources .source-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.study-guide-sources blockquote {
+  margin: 0.3rem 0 0.9rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid #e5e7eb;
+  color: #4b5563;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+/* --- print: the export --- */
+
+/* There is no file to download. The guide is laid out for paper and the
+   browser's print-to-PDF is what produces the artifact, which is why every
+   piece of app chrome has to be gone rather than merely tidy. */
+@media print {
+  body {
+    background: white;
+  }
+
+  .app-header,
+  .invite-form,
+  .workspace-toolbar,
+  .study-guide-actions,
+  .app-layout {
+    display: none !important;
+  }
+
+  .study-guide {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .study-guide-sheet h2 {
+    /* A heading alone at the foot of a page is the one break that reliably
+       looks like a mistake. */
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .study-guide-sheet li,
+  .study-guide-sources li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .study-guide-sources blockquote {
+    color: #374151;
+  }
 }
