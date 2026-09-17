@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from auth import CurrentUser
 from authz import require_document
@@ -116,8 +116,16 @@ def list_agent_requests(
     else's question — they see the answer when it lands as a suggestion.
     """
     require_document(document_id, user, db)
+    # anchor and reasoning are not in AgentRequestOut, and this endpoint is
+    # polled: without the defers they are read out of Postgres and dropped
+    # every tick. Deferred per-query rather than on the mapper like
+    # crdt_snapshot and file_data — those two are unbounded *and* reached from
+    # several places, which is what earns a column a mapper-level default. This
+    # is the only query in the API that selects this table, so the narrower fix
+    # is the honest one.
     return db.scalars(
         select(AgentRequest)
+        .options(defer(AgentRequest.anchor), defer(AgentRequest.reasoning))
         .where(
             AgentRequest.document_id == document_id,
             AgentRequest.requested_by == user.id,
