@@ -262,6 +262,17 @@ redeploy → set the Supabase Site URL. Naming the Vercel project first makes
 `https://<name>.vercel.app` predictable, so `ALLOWED_ORIGINS` can be filled in
 one pass and merely confirmed at the end.
 
+**A migration lands before the code that needs it, not after.** Railway
+redeploys on every merge to `main`, and `infra/migrations/` is applied by hand,
+so merging a PR that adds a table is a deploy of code against a schema that
+does not have it yet. Apply the new file to Supabase first, re-run
+`011_lockdown.sql`, and merge second. This is not hypothetical — `005` was
+merged before it was applied, and the worker crash-looped on
+`UndefinedTable: relation "study_guides" does not exist` until it was. The
+worker now turns that specific case into a warning and keeps ingesting (see
+`study_guides_available` in `worker.py`), but the ordering is still the thing
+that makes a deploy uneventful.
+
 ### Verify the deployment
 
 ```sh
