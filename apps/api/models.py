@@ -71,7 +71,22 @@ class Document(Base):
     # WRITER OF RECORD: apps/realtime. It flushes here on a debounce and on
     # shutdown. PUT /documents/{id}/snapshot writes the same column and is a
     # second writer — see the note in routers/documents.py.
-    crdt_snapshot: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    #
+    # Deferred, for the same reason file_data is, and with more at stake. A
+    # Yjs update encodes the whole edit history, tombstones included, so this
+    # grows for as long as the doc is used and never shrinks. authz.py's
+    # require_document() is a `db.get(Document, ...)`, and it sits on the two
+    # endpoints useSuggestions.ts polls — every 2s while a check runs, every
+    # 10s forever otherwise, for the life of every open tab. Four of its six
+    # callers drop the Document on the floor. Undeferred, an idle editor tab
+    # read the whole document out of Postgres twelve times a minute — two
+    # endpoints, six ticks — and sent none of it to anyone.
+    #
+    # Only routers/documents.py:get_document wants the bytes, and it is the
+    # one endpoint the web app never calls.
+    crdt_snapshot: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True, deferred=True
+    )
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     study_space: Mapped["StudySpace"] = relationship(back_populates="documents")
