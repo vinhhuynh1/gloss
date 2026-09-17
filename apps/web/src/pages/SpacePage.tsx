@@ -6,11 +6,13 @@ import type * as Y from "yjs";
 import Editor from "../components/Editor";
 import PresenceBar from "../components/PresenceBar";
 import SourcesPanel from "../components/SourcesPanel";
+import StudyGuideView from "../components/StudyGuideView";
 import SuggestionSidebar from "../components/SuggestionSidebar";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
 import { applySuggestion } from "../lib/applySuggestion";
 import { useCollabProvider } from "../lib/useCollabProvider";
+import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import type { Member, SpaceDocument, StudySpace, Suggestion } from "../lib/types";
 
@@ -60,36 +62,94 @@ function Workspace({
 
   const reject = useCallback((s: Suggestion) => void resolve(s.id, false), [resolve]);
 
+  const {
+    row: guideRow,
+    guide,
+    error: guideError,
+    asking,
+    running: guideRunning,
+    workerSuspect,
+    ask: askGuide,
+  } = useStudyGuide(documentId);
+  const [showGuide, setShowGuide] = useState(false);
+
+  const requestGuide = useCallback(() => {
+    if (!editor) return;
+    // textBetween with a "\n\n" block separator, not getText(): the worker
+    // splits the notes on blank lines to decide what to retrieve for, so the
+    // block boundaries are the part that has to survive. Same call anchors.ts
+    // uses to snapshot a passage.
+    const notes = editor.state.doc.textBetween(
+      0,
+      editor.state.doc.content.size,
+      "\n\n"
+    );
+    setShowGuide(true);
+    void askGuide(notes);
+  }, [editor, askGuide]);
+
+  if (showGuide && guide) {
+    return (
+      <StudyGuideView
+        guide={guide}
+        generatedAt={guideRow?.finished_at ?? null}
+        onClose={() => setShowGuide(false)}
+      />
+    );
+  }
+
   return (
-    <div className="app-layout">
-      <SourcesPanel spaceId={spaceId} />
-      {/* Kept mounted and editable in every connection state. Yjs merges
-          edits made while offline on reconnect — disabling the editor
-          would trade away the "no lost edits" property for a worse
-          experience. PresenceBar carries the status. */}
-      <Editor
-        ydoc={ydoc}
-        provider={provider}
-        user={identity}
-        suggestions={suggestions}
-        onAskAi={ask}
-        onSelectSuggestion={setFocusedId}
-        onAnchoredChange={setAnchoredIds}
-        onEditor={setEditor}
-      />
-      <SuggestionSidebar
-        suggestions={suggestions}
-        requests={requests}
-        anchoredIds={anchoredIds}
-        focusedId={focusedId}
-        error={error}
-        notice={notice}
-        onAccept={(s) => void accept(s)}
-        onReject={reject}
-        onDismissRequest={dismissRequest}
-        onFocus={setFocusedId}
-      />
-    </div>
+    <>
+      <div className="workspace-toolbar">
+        <button onClick={requestGuide} disabled={!editor || asking || guideRunning}>
+          {guideRunning ? "Writing study guide…" : "Study guide"}
+        </button>
+        {guide && !guideRunning && (
+          <button className="link-button" onClick={() => setShowGuide(true)}>
+            Open the last guide
+          </button>
+        )}
+        {/* Same reasoning as SourcesPanel's worker warning: the request
+            succeeded, so nothing looks broken, and a stopped worker is the
+            most common local-setup mistake. */}
+        {workerSuspect && (
+          <span className="muted">
+            Still queued — is the agent worker running?
+          </span>
+        )}
+        {guideError && <span className="error">{guideError}</span>}
+      </div>
+
+      <div className="app-layout">
+        <SourcesPanel spaceId={spaceId} />
+        {/* Kept mounted and editable in every connection state. Yjs merges
+            edits made while offline on reconnect — disabling the editor
+            would trade away the "no lost edits" property for a worse
+            experience. PresenceBar carries the status. */}
+        <Editor
+          ydoc={ydoc}
+          provider={provider}
+          user={identity}
+          suggestions={suggestions}
+          onAskAi={ask}
+          onSelectSuggestion={setFocusedId}
+          onAnchoredChange={setAnchoredIds}
+          onEditor={setEditor}
+        />
+        <SuggestionSidebar
+          suggestions={suggestions}
+          requests={requests}
+          anchoredIds={anchoredIds}
+          focusedId={focusedId}
+          error={error}
+          notice={notice}
+          onAccept={(s) => void accept(s)}
+          onReject={reject}
+          onDismissRequest={dismissRequest}
+          onFocus={setFocusedId}
+        />
+      </div>
+    </>
   );
 }
 

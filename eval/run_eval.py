@@ -373,10 +373,145 @@ def print_errors(results: list[dict]) -> None:
 # Run records
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Study guides
+# --------------------------------------------------------------------------
+
+def notes_document(cases: list[dict]) -> str:
+    """A notes document built from the test cases' own passages.
+
+    Not a new fixture to keep in sync: these eighteen passages are already the
+    hand-written notes this project is graded on, and joining them with blank
+    lines is exactly the block-separated text the editor sends. It also gives
+    the guide a document with known good and known wrong claims in it, which
+    is the interesting case — a guide that repeats the planted errors back has
+    failed differently from one that cites nothing.
+    """
+    return "\n\n".join(c["notes_passage"] for c in cases)
+
+
+def score_guide(guide: dict, chunks: list[dict], sections: list[str]) -> dict:
+    """Two numbers, neither of them a rewrite of the five above.
+
+    citation validity — every cited chunk was actually retrieved. This should
+    be 100% by construction, because _validate_guide drops anything else
+    before it is stored. It is measured anyway: if it ever reads below 100,
+    the guard has a hole, and that is worth finding from a number rather than
+    from a reader noticing an invented source.
+
+    section coverage — how much of the notes made it into the guide at all. A
+    guide that grounds three points perfectly and silently drops the other
+    fifteen sections is not a good guide, and citation validity alone would
+    call it flawless.
+    """
+    retrieved = {c["id"] for c in chunks}
+    items = [p for s in guide["sections"] for p in s["points"]] + guide["key_terms"]
+    cited = [i["source_chunk_id"] for i in items]
+    valid = [c for c in cited if c in retrieved]
+
+    return {
+        "sections_in_notes": len(sections),
+        "sections_in_guide": len(guide["sections"]),
+        "points": len(items),
+        "key_terms": len(guide["key_terms"]),
+        "distinct_sources_cited": len(set(cited)),
+        "chunks_retrieved": len(retrieved),
+        "citation_validity": (len(valid) / len(cited)) if cited else None,
+        "section_coverage": (
+            len(guide["sections"]) / len(sections) if sections else None
+        ),
+    }
+
+
+def run_guide(test_cases_path: Path, study_space_id: str) -> dict:
+    """Generate one study guide and score its grounding.
+
+    Deliberately not folded into run(): it measures a different behaviour and
+    writes a different record. The five metrics in this file are a time series
+    going back to the baseline, and quietly adding a sixth column to them —
+    or worse, changing what one of them counts — would break every comparison
+    in eval/CHANGELOG.md.
+    """
+    import study_guide as guide_mod
+
+    data = json.loads(test_cases_path.read_text(encoding="utf-8"))
+    cases = data["cases"]
+    corpus, _page_refs = corpus_info(study_space_id)
+    if corpus["chunk_count"] == 0:
+        sys.exit(
+            f"""Study space {study_space_id} has no source chunks.
+
+Seed it first:
+    cd apps/agent-worker && python seed_demo.py"""
+        )
+
+    notes = notes_document(cases)
+    sections = guide_mod.split_sections(notes)
+    print(f"{len(notes)} chars of notes in {len(sections)} section(s) against "
+          f"{corpus['chunk_count']} chunks, top_k={agent.TOP_K}, "
+          f"model={agent.ANTHROPIC_MODEL}\n")
+
+    started = time.perf_counter()
+    with UsageRecorder() as usage:
+        guide, chunks = guide_mod.generate(study_space_id, notes)
+    elapsed = time.perf_counter() - started
+    tokens_in, tokens_out = usage.drain()
+
+    metrics = score_guide(guide, chunks, sections)
+
+    print(f"  title:              {guide['title']}")
+    print(f"  sections in notes:  {metrics['sections_in_notes']}")
+    print(f"  sections in guide:  {metrics['sections_in_guide']}")
+    print(f"  points:             {metrics['points']}")
+    print(f"  key terms:          {metrics['key_terms']}")
+    print(f"  sources cited:      {metrics['distinct_sources_cited']} "
+          f"of {metrics['chunks_retrieved']} retrieved")
+    print(f"  citation validity:  {_pct(metrics['citation_validity'])}")
+    print(f"  section coverage:   {_pct(metrics['section_coverage'])}")
+    spend = (
+        f"{tokens_in:,} in / {tokens_out:,} out"
+        if tokens_in is not None
+        else "token usage unavailable"
+    )
+    print(f"\n{elapsed:.1f}s, {spend}")
+
+    if metrics["citation_validity"] not in (None, 1.0):
+        print("\nWARNING: citation validity is below 100%, which _validate_guide")
+        print("is supposed to make impossible. That is a bug in the guard, not a score.")
+
+    return {
+        "run": {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "mode": "study_guide",
+            "git_sha": _git_sha(),
+            "elapsed_seconds": round(elapsed, 1),
+            "input_tokens": tokens_in,
+            "output_tokens": tokens_out,
+        },
+        "config": {
+            "model": agent.ANTHROPIC_MODEL,
+            "top_k": agent.TOP_K,
+            "guide_prompt_sha256": _sha256(guide_mod.STUDY_GUIDE_SYSTEM_PROMPT),
+            "min_section_chars": guide_mod.MIN_SECTION_CHARS,
+            "max_retrieved_sections": guide_mod.MAX_RETRIEVED_SECTIONS,
+            "embedding_model": EMBEDDING_MODEL,
+            "chunk_size_chars": CHUNK_SIZE_CHARS,
+            "chunk_overlap_chars": CHUNK_OVERLAP_CHARS,
+        },
+        "corpus": corpus,
+        "metrics": metrics,
+        "guide": guide,
+    }
+
+
 def write_record(record: dict) -> Path:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = record["run"]["timestamp"].replace(":", "-").replace("+00:00", "Z")
-    path = RESULTS_DIR / f"{stamp}.json"
+    # Guide runs are prefixed so `--compare latest` cannot pick one up and diff
+    # it against a scoring run: they share no metrics, and the comparison would
+    # print a table of blanks rather than an error.
+    prefix = "guide-" if record["run"].get("mode") == "study_guide" else ""
+    path = RESULTS_DIR / f"{prefix}{stamp}.json"
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     return path
 
@@ -384,8 +519,14 @@ def write_record(record: dict) -> Path:
 def load_record(spec: str, exclude: Path | None = None) -> dict | None:
     """Resolve --compare: either `latest` or a path to a run record."""
     if spec == "latest":
+        # Guide records are skipped, not just prefixed: "guide-" sorts after
+        # "2026-", so without this `latest` would resolve to one and diff a
+        # scoring run against a record that shares none of its metrics.
         candidates = sorted(
-            p for p in RESULTS_DIR.glob("*.json") if p.resolve() != (exclude and exclude.resolve())
+            p
+            for p in RESULTS_DIR.glob("*.json")
+            if not p.name.startswith("guide-")
+            and p.resolve() != (exclude and exclude.resolve())
         )
         if not candidates:
             print("\nNo earlier run in eval/results/ to compare against.")
@@ -635,6 +776,12 @@ def main() -> None:
         "--no-save", action="store_true",
         help="skip writing a run record to eval/results/",
     )
+    parser.add_argument(
+        "--guide", action="store_true",
+        help="score the study-guide generator instead of the per-passage "
+             "agent: one guide over the test set's passages, scored on "
+             "citation validity and section coverage",
+    )
     args = parser.parse_args()
 
     study_space_id = os.getenv("STUDY_SPACE_ID")
@@ -653,7 +800,10 @@ then re-run the eval with the study_space_id it prints:
     $env:STUDY_SPACE_ID="<uuid>"; python run_eval.py   # PowerShell"""
         )
 
-    record = run(Path(args.test_cases), study_space_id, use_judge=args.judge)
+    if args.guide:
+        record = run_guide(Path(args.test_cases), study_space_id)
+    else:
+        record = run(Path(args.test_cases), study_space_id, use_judge=args.judge)
 
     written = None
     if not args.no_save:
@@ -662,9 +812,13 @@ then re-run the eval with the study_space_id it prints:
         print("Add a line to eval/CHANGELOG.md saying what changed and what it did.")
 
     if args.compare:
-        previous = load_record(args.compare, exclude=written)
-        if previous:
-            print_comparison(record, previous)
+        if args.guide:
+            # The two modes share no metrics, so there is nothing to diff.
+            print("\n--compare does not apply to --guide runs.")
+        else:
+            previous = load_record(args.compare, exclude=written)
+            if previous:
+                print_comparison(record, previous)
 
 
 if __name__ == "__main__":

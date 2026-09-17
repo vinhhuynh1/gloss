@@ -15,7 +15,7 @@ Two sets of SQL, split by portability.
 
 `docker compose up -d` mounts `migrations/` at
 `/docker-entrypoint-initdb.d`. The Postgres entrypoint runs every `*.sql`
-there in alphabetical order, so `001` through `004`, on the **first boot of an
+there in alphabetical order, so `001` through `005`, on the **first boot of an
 empty volume only**. To re-apply after editing:
 
 ```sh
@@ -58,6 +58,7 @@ psql "$SUPABASE_DB_URL" -f infra/migrations/001_init.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/002_indexes.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/003_source_ingestion.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/004_agent_requests.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/005_study_guides.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
 ```
@@ -72,14 +73,14 @@ docker run --rm -i postgres:16 psql "$SUPABASE_DB_URL" < infra/migrations/001_in
 Pasting into the Supabase SQL editor works too, but running the files keeps
 applying the schema a repeatable act rather than a one-off click.
 
-All six are idempotent — re-running them is safe. `011_lockdown.sql` has to
+All seven are idempotent — re-running them is safe. `011_lockdown.sql` has to
 be re-run whenever a migration adds a table, or the new table is readable
 through PostgREST with the public anon key.
 
 ### Verify
 
 ```sql
-\dt                                                  -- eight tables
+\dt                                                  -- nine tables
 \d source_chunks                                     -- vector(384) + an hnsw index
 SELECT extname FROM pg_extension WHERE extname = 'vector';
 ```
@@ -110,23 +111,27 @@ and the suggestion sidebar polls two endpoints every 2–10s for as long as a ta
 stays open. A 32MB database served 295% of a month's egress that way.
 
 What made it expensive was not the number of requests but what each one read.
-Three columns here are unbounded — `sources.file_data` (up to 20MB per row),
+Five columns here are unbounded — `sources.file_data` (up to 20MB per row),
 `documents.crdt_snapshot` (a Yjs update, which grows with edit history and
-never shrinks), and `source_chunks.embedding` (384 floats, several KB per row
-on the wire). Leaving a column out of the response model does nothing about
-this: `select(Source)` and `db.get(Document, ...)` fetch every column the
-mapper knows about, and Pydantic discards the ones it does not expose *after*
-Postgres has already sent them.
+never shrinks), `source_chunks.embedding` (384 floats, several KB per row on
+the wire), and `study_guides.notes` and `study_guides.guide` (a whole notes
+document, and a guide quoting an excerpt per point). Leaving a column out of
+the response model does nothing about this: `select(Source)` and
+`db.get(Document, ...)` fetch every column the mapper knows about, and Pydantic
+discards the ones it does not expose *after* Postgres has already sent them.
 
-So the rule is a query-side one. `file_data` and `crdt_snapshot` are
-`deferred=True` on the mapper in `apps/api/models.py` — on the mapper rather
-than per query, because both are reached from several call sites and a
-per-query fix regresses the moment someone writes another `select(Source)`.
-The few places that genuinely want one load it by naming it, and the comments
-on those two columns say which places those are. `embedding` needs no deferral
-because nothing selects a `SourceChunk` entity at all: the worker's retrieval
-query names the columns it wants and leaves the vector in the `ORDER BY`, and
-the API only ever counts chunks.
+So the rule is a query-side one. `file_data`, `crdt_snapshot`, `notes` and
+`guide` are all `deferred=True` on the mapper in `apps/api/models.py` — on the
+mapper rather than per query, because a per-query fix regresses the moment
+someone writes another `select(Source)`. The few places that genuinely want one
+load it by naming it, and the comment on each column says which places those
+are. `embedding` needs no deferral because nothing selects a `SourceChunk`
+entity at all: the worker's retrieval query names the columns it wants and
+leaves the vector in the `ORDER BY`, and the API only ever counts chunks.
+
+`study_guides` is the shape to copy. The status a poll asks for and the guide
+it is waiting on are two different endpoints, so the expensive read happens
+once, on `GET …/study-guide/content`, rather than every two seconds.
 
 The `octet_length(crdt_snapshot)` query above is the way to see the stakes —
 that number, doubled, is what one idle tick of the sidebar used to cost.

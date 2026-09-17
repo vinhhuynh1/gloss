@@ -34,6 +34,7 @@ import psycopg
 from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
 
+import study_guide
 from agent import check_passage, cited_chunk
 from embeddings import embed_batch
 from ingest import build_chunks, extract_pages
@@ -399,6 +400,126 @@ def process_agent_request(conn, row) -> bool:
     return True
 
 
+def reclaim_stale_study_guides(conn) -> int:
+    """Same as reclaim_stale, for the study-guide queue."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE study_guides
+               SET status = 'pending', claimed_at = NULL
+             WHERE status = 'processing'
+               AND claimed_at < now() - make_interval(secs => %s)
+            """,
+            (AGENT_STALE_CLAIM_SECONDS,),
+        )
+        return cur.rowcount
+
+
+def claim_next_study_guide(conn):
+    """Claim one pending study guide, or return None.
+
+    Same shape as claim_next_agent_request, including the wait on unsettled
+    uploads: a guide generated while half the slides are still being chunked
+    would silently cover half the course, which is worse than waiting because
+    nothing about the finished guide would say so.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE study_guides sg
+               SET status = 'processing',
+                   claimed_at = now(),
+                   attempts = sg.attempts + 1
+              FROM documents d
+             WHERE sg.id = (
+                   SELECT g.id
+                     FROM study_guides g
+                     JOIN documents gd ON gd.id = g.document_id
+                    WHERE g.status = 'pending'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM sources s
+                           WHERE s.study_space_id = gd.study_space_id
+                             AND s.status IN ('pending', 'processing')
+                      )
+                    ORDER BY g.created_at
+                      FOR UPDATE OF g SKIP LOCKED
+                    LIMIT 1
+             )
+               AND d.id = sg.document_id
+         RETURNING sg.id, d.study_space_id, sg.notes, sg.attempts
+            """
+        )
+        return cur.fetchone()
+
+
+def _fail_study_guide(conn, guide_id, attempts: int, message: str, *, retry: bool):
+    """Mirror of _fail_agent_request for the guide queue."""
+    give_up = not retry or attempts >= MAX_ATTEMPTS
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE study_guides
+               SET status = %s, error = %s, claimed_at = NULL,
+                   finished_at = CASE WHEN %s THEN now() END
+             WHERE id = %s
+            """,
+            ("failed" if give_up else "pending", message[:MAX_ERROR_CHARS], give_up, guide_id),
+        )
+    verb = "failed" if give_up else f"will retry ({attempts}/{MAX_ATTEMPTS})"
+    print(f"  {verb}: {message[:200]}")
+
+
+def process_study_guide(conn, row) -> bool:
+    """Generate one guide for a claimed row. Returns True on success."""
+    guide_id, study_space_id, notes, attempts = row
+    print(f"Writing study guide {guide_id}")
+
+    try:
+        guide, _chunks = study_guide.generate(str(study_space_id), notes)
+    except study_guide.EmptyNotesError as exc:
+        # Nothing to write from, and nothing a retry would change.
+        _fail_study_guide(conn, guide_id, attempts, str(exc), retry=False)
+        return False
+    except Exception as exc:  # noqa: BLE001 — every failure is the requester's to see
+        message, retry = _describe_agent_error(exc)
+        _fail_study_guide(conn, guide_id, attempts, message, retry=retry)
+        return False
+
+    if not guide["sections"]:
+        # Every point the model wrote cited an excerpt it was never given, so
+        # _validate_guide dropped them all. Retrying is worth one go — this is
+        # a bad sample, not a bad document.
+        _fail_study_guide(
+            conn,
+            guide_id,
+            attempts,
+            "The guide came back with nothing that could be traced to your "
+            "source material, so it was discarded rather than shown.",
+            retry=True,
+        )
+        return False
+
+    # `attempts` is this claim's token, exactly as in process_agent_request.
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE study_guides
+               SET status = 'done', guide = %s, error = NULL, claimed_at = NULL,
+                   finished_at = now()
+             WHERE id = %s AND attempts = %s
+            """,
+            (Jsonb(guide), guide_id, attempts),
+        )
+        if cur.rowcount == 0:
+            print("  claim was reclaimed by another worker; discarding this result")
+            return False
+
+    points = sum(len(s["points"]) for s in guide["sections"])
+    print(f"  {len(guide['sections'])} sections, {points} points, "
+          f"{len(guide['key_terms'])} key terms")
+    return True
+
+
 def requeue(conn, study_space_id: str | None) -> int:
     """Put already-ingested sources back on the queue.
 
@@ -430,7 +551,11 @@ def run(once: bool = False):
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         idle_logged = False
         while True:
-            reclaimed = reclaim_stale(conn) + reclaim_stale_agent_requests(conn)
+            reclaimed = (
+                reclaim_stale(conn)
+                + reclaim_stale_agent_requests(conn)
+                + reclaim_stale_study_guides(conn)
+            )
             if reclaimed:
                 print(f"Reclaimed {reclaimed} stale claim(s)")
 
@@ -439,6 +564,15 @@ def run(once: bool = False):
             if request is not None:
                 idle_logged = False
                 process_agent_request(conn, request)
+                continue
+
+            # Guides next. Someone is waiting on these too, but a guide is one
+            # long call where a check is a short one, so letting checks past
+            # keeps the interactive path interactive.
+            guide = claim_next_study_guide(conn)
+            if guide is not None:
+                idle_logged = False
+                process_study_guide(conn, guide)
                 continue
 
             row = claim_next(conn)
@@ -452,7 +586,8 @@ def run(once: bool = False):
                 return
             if not idle_logged:
                 print(
-                    f"Waiting for uploads and checks (polling every {POLL_INTERVAL_SECONDS}s)…"
+                    "Waiting for uploads, checks and guides "
+                    f"(polling every {POLL_INTERVAL_SECONDS}s)…"
                 )
                 idle_logged = True
             time.sleep(POLL_INTERVAL_SECONDS)
