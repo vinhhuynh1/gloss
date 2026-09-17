@@ -14,8 +14,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 # NOTE: real-time sync itself is NOT handled here — that's the job of the
 # apps/realtime process the web app connects to directly. This router only
-# persists periodic snapshots so the doc survives a server restart and so
-# the agent worker has something to read when it retrieves document text.
+# persists periodic snapshots so the doc survives a server restart.
+#
+# Not for the agent worker's benefit: it never reads this column. Decoding a
+# Yjs update needs a CRDT library, and neither Python service carries one, so
+# every feature that works from document text — a check, a study guide — is
+# sent that text by the browser instead.
 #
 # WRITER OF RECORD: apps/realtime owns documents.crdt_snapshot. It binds
 # state on first connection and flushes on a debounce and on SIGTERM. The

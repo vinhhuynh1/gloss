@@ -3,7 +3,14 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import agent_requests, documents, sources, study_spaces, suggestions
+from routers import (
+    agent_requests,
+    documents,
+    sources,
+    study_guides,
+    study_spaces,
+    suggestions,
+)
 
 app = FastAPI(title="Study Notes Co-Editor API")
 
@@ -31,6 +38,7 @@ app.include_router(documents.router)
 app.include_router(agent_requests.router)
 app.include_router(sources.router)
 app.include_router(suggestions.router)
+app.include_router(study_guides.router)
 
 # Mounted only when DEV_AUTH_SECRET is set, so a deployment that simply does
 # not set the variable cannot expose a passwordless login by accident — there

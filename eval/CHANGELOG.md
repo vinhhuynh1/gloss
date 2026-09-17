@@ -49,6 +49,46 @@ Notes on failure modes: ...
 
 ---
 
+## 2026-09-17 — study guides, measured separately
+
+Record: none yet — `python eval/run_eval.py --guide` writes one, prefixed
+`guide-`. **The five metrics above are untouched and no run below is
+invalidated.** That is the point of this entry.
+
+A second agent behaviour landed: the worker now turns a whole notes document
+into a revision guide (`apps/agent-worker/study_guide.py`, week 6 of the build
+plan). It shares retrieval and the grounding rule with the per-passage agent
+but nothing else — no verdict, no case, no confusion matrix — so scoring it
+through `run()` would have meant either inventing an `expected_type` for a
+document or widening what the five numbers count. Both break the comparison
+chain back to the baseline, which is the artifact this log exists to protect.
+
+So `--guide` is a separate mode writing a separate record, on two numbers:
+
+- **citation validity** — every `source_chunk_id` in the guide was actually
+  retrieved. Expected to read 100% always, because `_validate_guide` drops
+  anything else before it is stored. It is measured anyway: below 100 means
+  the guard has a hole, and that should surface as a number rather than as a
+  reader noticing an invented source.
+- **section coverage** — how many of the notes' sections reached the guide. On
+  its own, citation validity calls a guide that grounds three points perfectly
+  and drops the other fifteen sections flawless; this is the number that
+  catches it.
+
+Neither is a quality score, and neither should be hillclimbed. The question
+they answer is "is it grounded and is it complete", not "is it a good guide" —
+`--judge` is the closer thing to the latter, and the note above about the judge
+drifting applies here too.
+
+The notes document the mode runs against is the eighteen test-case passages
+joined with blank lines, not a new fixture. They are already the hand-written
+notes this project is graded on, and they carry known-correct claims and
+planted errors in the same document — a guide that repeats a planted error
+back has failed differently from one that cites nothing, and that distinction
+is worth being able to see.
+
+---
+
 ## 2026-09-12 — order `citation` ahead of `gap_fill`
 
 Record: `results/2026-09-12T04-58-06+00-00.json` (compared with
@@ -333,6 +373,18 @@ transport chain and chemiosmosis" — both neighbours of the right section, not
 wild citations.
 
 ## Queued — changes to measure, in this order
+
+> **All three of these have shipped** — see the entries above: *a bar on
+> `gap_fill`*, *the same bar on `citation`*, and *fix the sliver chunks*. The
+> list is kept because the reasoning behind each is still the record of why it
+> was tried, and because the arithmetic in item 1 is what the entry for it was
+> checked against.
+>
+> What is actually next is in the newest entry: `gap_fill` over-firing survived
+> both direct attempts, so the next change should be one of kind rather than
+> another clause — either demote `gap_fill` to needing a stronger signal than
+> the other types, or add `none` cases so the bar is measured rather than
+> argued. Six of eighteen is thin for the one behaviour that keeps breaking.
 
 Three candidates, in this order. The first two come out of the baseline's one
 real failure mode — the agent will not stay quiet — and they are deliberately
