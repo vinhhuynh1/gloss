@@ -2,6 +2,11 @@ import { env } from "./env";
 import { getSession, signOut } from "./session";
 
 export class ApiError extends Error {
+  /**
+   * `status` is the HTTP status, or 0 when no response arrived at all — see
+   * the catch in apiFetch. 0 is not a real status, so a call site testing for
+   * a specific code can never confuse the two.
+   */
   constructor(public status: number, message: string) {
     super(message);
     this.name = "ApiError";
@@ -29,14 +34,35 @@ export async function apiFetch<T>(
   // parse. The upload in SourcesPanel goes through here.
   const isFormData = init.body instanceof FormData;
 
-  const res = await fetch(`${env.API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      Authorization: `Bearer ${session.access_token}`,
-      ...init.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${env.API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
+        Authorization: `Bearer ${session.access_token}`,
+        ...init.headers,
+      },
+    });
+  } catch {
+    // fetch() rejects, rather than resolving with a bad status, only when no
+    // usable response arrived: the API is down or the host is wrong, this
+    // origin is missing from its ALLOWED_ORIGINS so the preflight was refused,
+    // or the response carried no CORS headers — which is what an unhandled
+    // server error looks like from here, because the error path skips the
+    // middleware that would have added them.
+    //
+    // The browser's own message for all of these is the bare "Failed to
+    // fetch", and every caller renders err.message straight into the UI. That
+    // string names neither the cause nor anything to try, and when it replaces
+    // an identical one already on screen a failed click looks like no click at
+    // all. Say which API could not be reached instead.
+    throw new ApiError(
+      0,
+      `Can't reach the API at ${env.API_BASE_URL} — it may be down, or this ` +
+        `origin may not be in its ALLOWED_ORIGINS.`
+    );
+  }
 
   if (res.status === 401) {
     // The token was rejected rather than merely absent — drop the dead

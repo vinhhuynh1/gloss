@@ -32,7 +32,7 @@ function isSettled(status: StudyGuideStatusRow["status"]): boolean {
 export function useStudyGuide(documentId: string) {
   const [row, setRow] = useState<StudyGuideStatusRow | null>(null);
   const [guide, setGuide] = useState<Guide | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   // Bumped by ask() to restart the poll, which has usually already exited by
   // then. Same device as SourcesPanel's pollToken.
@@ -49,35 +49,59 @@ export function useStudyGuide(documentId: string) {
         timer = window.setTimeout(tick, POLL_MS);
         return;
       }
+      let status: StudyGuideStatusRow;
       try {
-        const status = await apiFetch<StudyGuideStatusRow>(
+        status = await apiFetch<StudyGuideStatusRow>(
           `/documents/${documentId}/study-guide`
         );
+      } catch (err) {
         if (!active) return;
-        failures = 0;
-        setRow(status);
-        setError(null);
+        // A document nobody has asked about yet has no guide, which is the
+        // normal starting state rather than something to report. Only the
+        // status call may read a 404 this way — see the content fetch below.
+        if (err instanceof ApiError && err.status === 404) {
+          setRow(null);
+          return;
+        }
+        setFetchError(
+          err instanceof Error ? err.message : "Could not load the study guide"
+        );
+        failures += 1;
+        timer = window.setTimeout(tick, Math.min(POLL_MS * 2 ** failures, MAX_RETRY_MS));
+        return;
+      }
 
-        if (status.status === "done") {
+      if (!active) return;
+      failures = 0;
+      setRow(status);
+      setFetchError(null);
+      // Someone who reloads while a guide is running never went through ask(),
+      // so without this the "is the worker running?" hint — the one thing that
+      // explains a guide stuck at pending — could never appear for them.
+      if (!isSettled(status.status) && askedAt.current === null) {
+        askedAt.current = new Date(status.created_at).getTime();
+      }
+
+      if (status.status === "done") {
+        // Its own try: a 404 here is not "nothing has been asked for". The
+        // status call reports the newest row whatever its state, while
+        // /content insists the newest row is done, so another member asking
+        // for a fresh guide between the two calls 404s this one — and running
+        // the branch above would blank the row and silently exit the loop.
+        try {
           const full = await apiFetch<StudyGuideRow>(
             `/documents/${documentId}/study-guide/content`
           );
           if (!active) return;
           setGuide(full.guide);
+        } catch (err) {
+          if (!active) return;
+          setFetchError(
+            err instanceof Error ? err.message : "Could not load the study guide"
+          );
         }
-        if (!isSettled(status.status)) timer = window.setTimeout(tick, POLL_MS);
-      } catch (err) {
-        if (!active) return;
-        // A document nobody has asked about yet has no guide, which is the
-        // normal starting state rather than something to report.
-        if (err instanceof ApiError && err.status === 404) {
-          setRow(null);
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Could not load the study guide");
-        failures += 1;
-        timer = window.setTimeout(tick, Math.min(POLL_MS * 2 ** failures, MAX_RETRY_MS));
       }
+      if (!isSettled(status.status)) timer = window.setTimeout(tick, POLL_MS);
     }
 
     void tick();
@@ -90,7 +114,7 @@ export function useStudyGuide(documentId: string) {
   const ask = useCallback(
     async (notes: string) => {
       setAsking(true);
-      setError(null);
+      setFetchError(null);
       try {
         // Cleared before the request, not after it returns: leaving the old
         // guide on screen while a new one is being written reads as though
@@ -104,7 +128,9 @@ export function useStudyGuide(documentId: string) {
         askedAt.current = Date.now();
         setPollToken((n) => n + 1);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not start a study guide");
+        setFetchError(
+          err instanceof Error ? err.message : "Could not start a study guide"
+        );
       } finally {
         setAsking(false);
       }
@@ -113,6 +139,18 @@ export function useStudyGuide(documentId: string) {
   );
 
   const running = row !== null && !isSettled(row.status);
+
+  // A guide the worker gave up on is a failure the person who clicked has to
+  // see. Nothing else renders row.error: the poll stops, the button re-enables
+  // and `guide` stays null, so without this the click ends by putting the
+  // toolbar back exactly as it was and the reason stays in the database.
+  // Folded into one `error` so the caller has a single thing to render.
+  const error =
+    fetchError ??
+    (row?.status === "failed"
+      ? row.error ?? "The study guide could not be written."
+      : null);
+
   const workerSuspect =
     running &&
     row.status === "pending" &&
