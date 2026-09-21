@@ -84,7 +84,11 @@ function Workspace({
       editor.state.doc.content.size,
       "\n\n"
     );
-    setShowGuide(true);
+    // Flipped only for a request that will actually be made. askGuide refuses
+    // an empty document, and switching the view on the way in would render
+    // whichever guide was generated last — so the click would look like it had
+    // reopened an old guide rather than like it had been turned down.
+    if (notes.trim() !== "") setShowGuide(true);
     void askGuide(notes);
   }, [editor, askGuide]);
 
