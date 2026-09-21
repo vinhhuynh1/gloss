@@ -113,6 +113,20 @@ export function useStudyGuide(documentId: string) {
 
   const ask = useCallback(
     async (notes: string) => {
+      // Refused here rather than by the API. The notes column is NOT NULL with
+      // a min_length of 1, so an empty document comes back 422 — and a 422 is
+      // the one status whose body FastAPI writes as a list of field errors,
+      // which is the most apiFetch can turn into "notes: String should have at
+      // least 1 character". True, and no use to someone who just wants to be
+      // told the page is blank. Nothing is cleared on this path: the last
+      // guide stays where it is, because no new one was started.
+      if (notes.trim() === "") {
+        setFetchError(
+          "There are no notes to build a guide from yet — write something first."
+        );
+        return;
+      }
+
       setAsking(true);
       setFetchError(null);
       try {
