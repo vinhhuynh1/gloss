@@ -76,6 +76,23 @@ export async function apiFetch<T>(
     try {
       const body = await res.json();
       if (typeof body?.detail === "string") detail = body.detail;
+      // FastAPI answers its own request validation failures with a list of
+      // {loc, msg} objects rather than a string, so the branch above leaves
+      // every 422 in the app as the bare reason phrase "Unprocessable
+      // Content" — which names neither the field that was rejected nor what
+      // was wrong with it. Name both; a caller that can say something better
+      // for its own case still should, this is the floor.
+      else if (Array.isArray(body?.detail)) {
+        const parts: string[] = body.detail
+          .map((e: { loc?: unknown[]; msg?: string }) => {
+            // The last element of `loc` is the field; the ones before it are
+            // the path to it ("body", "notes") and say nothing to a reader.
+            const field = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : null;
+            return [field, e.msg].filter(Boolean).join(": ");
+          })
+          .filter((part: string) => part !== "");
+        if (parts.length > 0) detail = parts.join("; ");
+      }
     } catch {
       // Non-JSON error body; the status text will do.
     }
