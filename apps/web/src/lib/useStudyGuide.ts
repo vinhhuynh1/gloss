@@ -43,12 +43,23 @@ export function useStudyGuide(documentId: string) {
     let active = true;
     let timer: number | undefined;
     let failures = 0;
+    let first = true;
 
     async function tick() {
-      if (document.hidden) {
-        timer = window.setTimeout(tick, POLL_MS);
-        return;
-      }
+      // A hidden tab has nobody watching the spinner, so the loop parks until
+      // the visibility listener below restarts it — the same arrangement as
+      // useSuggestions. Parking on a timer instead does not work: browsers
+      // throttle timers in a backgrounded tab to roughly once a minute, so
+      // coming back to the tab left a finished guide unfetched for long enough
+      // to look like it had never finished, and a reload was the only way
+      // through. A guide takes minutes, so switching away while it runs is the
+      // normal path rather than an edge case.
+      //
+      // Never on the first run, though: a page opened in a background tab
+      // should still have its finished guide ready when it is looked at.
+      if (document.hidden && !first) return;
+      first = false;
+
       let status: StudyGuideStatusRow;
       try {
         status = await apiFetch<StudyGuideStatusRow>(
@@ -82,6 +93,7 @@ export function useStudyGuide(documentId: string) {
         askedAt.current = new Date(status.created_at).getTime();
       }
 
+      let contentFailed = false;
       if (status.status === "done") {
         // Its own try: a 404 here is not "nothing has been asked for". The
         // status call reports the newest row whatever its state, while
@@ -96,18 +108,41 @@ export function useStudyGuide(documentId: string) {
           setGuide(full.guide);
         } catch (err) {
           if (!active) return;
+          contentFailed = true;
+          failures += 1;
           setFetchError(
             err instanceof Error ? err.message : "Could not load the study guide"
           );
         }
       }
       if (!isSettled(status.status)) timer = window.setTimeout(tick, POLL_MS);
+      // A settled row normally ends the loop — there is no answer left to
+      // change. But a `done` row whose content could not be fetched has an
+      // answer this hook simply failed to collect, and ending there left
+      // `guide` null with a reload as the only way out. Retry that one case,
+      // on the same backoff the status call uses.
+      else if (contentFailed) {
+        timer = window.setTimeout(
+          tick,
+          Math.min(POLL_MS * 2 ** failures, MAX_RETRY_MS)
+        );
+      }
     }
 
     void tick();
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        window.clearTimeout(timer);
+        void tick();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       active = false;
       window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [documentId, pollToken]);
 
