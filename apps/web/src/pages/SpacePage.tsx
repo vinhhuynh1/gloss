@@ -3,15 +3,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
+import CommentComposer from "../components/CommentComposer";
+import CommentsSidebar from "../components/CommentsSidebar";
+import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
 import PresenceBar from "../components/PresenceBar";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
 import SuggestionSidebar from "../components/SuggestionSidebar";
+import ThemeToggle from "../components/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
+import type { PassageAnchor } from "../lib/anchors";
 import { applySuggestion } from "../lib/applySuggestion";
 import { useCollabProvider } from "../lib/useCollabProvider";
+import { useComments } from "../lib/useComments";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import type { Member, SpaceDocument, StudySpace, Suggestion } from "../lib/types";
@@ -34,12 +40,17 @@ function Workspace({
   ydoc,
   provider,
   identity,
+  members,
+  currentUserId,
 }: {
   spaceId: string;
   documentId: string;
   ydoc: Y.Doc;
   provider: WebsocketProvider;
   identity: { name: string; color: string };
+  /** For @mention completion and for rendering a mention as a name. */
+  members: Member[];
+  currentUserId: string | undefined;
 }) {
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   const [anchoredIds, setAnchoredIds] = useState<string[]>([]);
@@ -47,6 +58,23 @@ function Workspace({
 
   const { suggestions, requests, error, notice, setNotice, ask, resolve, dismissRequest } =
     useSuggestions(documentId, setFocusedId);
+
+  const {
+    threads,
+    openThreads,
+    error: commentsError,
+    busy: commentsBusy,
+    addThread,
+    addReply,
+    editComment,
+    setResolved,
+    removeComment,
+  } = useComments(documentId);
+  const [anchoredCommentIds, setAnchoredCommentIds] = useState<string[]>([]);
+  const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
+  // The passage a new thread is being written about, held until the composer
+  // is submitted. Null when nobody is composing.
+  const [pendingComment, setPendingComment] = useState<PassageAnchor | null>(null);
 
   const accept = useCallback(
     async (s: Suggestion) => {
@@ -125,7 +153,13 @@ function Workspace({
       </div>
 
       <div className="app-layout">
-        <SourcesPanel spaceId={spaceId} />
+        {/* One rail, two stacked panels: where you are in the notes, and what
+            the agent may cite. Both are "about this document" navigation, and
+            a fourth column would leave the editor too narrow to read. */}
+        <div className="left-rail">
+          <DocumentOutline editor={editor} />
+          <SourcesPanel spaceId={spaceId} />
+        </div>
         {/* Kept mounted and editable in every connection state. Yjs merges
             edits made while offline on reconnect — disabling the editor
             would trade away the "no lost edits" property for a worse
@@ -135,9 +169,13 @@ function Workspace({
           provider={provider}
           user={identity}
           suggestions={suggestions}
+          threads={openThreads}
           onAskAi={ask}
+          onComment={setPendingComment}
           onSelectSuggestion={setFocusedId}
+          onSelectComment={setFocusedCommentId}
           onAnchoredChange={setAnchoredIds}
+          onAnchoredCommentsChange={setAnchoredCommentIds}
           onEditor={setEditor}
         />
         <SuggestionSidebar
@@ -152,7 +190,45 @@ function Workspace({
           onDismissRequest={dismissRequest}
           onFocus={setFocusedId}
         />
+        <CommentsSidebar
+          threads={threads}
+          anchoredIds={anchoredCommentIds}
+          focusedId={focusedCommentId}
+          members={members}
+          currentUserId={currentUserId}
+          error={commentsError}
+          busy={commentsBusy}
+          onFocus={setFocusedCommentId}
+          onReply={(id, body) => void addReply(id, body)}
+          onEdit={(id, body) => void editComment(id, body)}
+          onDelete={(id) => void removeComment(id)}
+          onResolve={(id, resolved) => void setResolved(id, resolved)}
+        />
       </div>
+
+      {/* The composer for a new thread, over the page rather than in the
+          rail: it belongs to the passage that is selected right now, and a
+          box that appears 300px away from the highlighted text reads as
+          unrelated to it. */}
+      {pendingComment && (
+        <div className="comment-draft-backdrop" onClick={() => setPendingComment(null)}>
+          <div className="comment-draft" onClick={(e) => e.stopPropagation()}>
+            <p className="comment-quote">“{pendingComment.quote}”</p>
+            <CommentComposer
+              members={members}
+              placeholder="Ask your group about this passage…"
+              submitLabel="Comment"
+              autoFocus
+              busy={commentsBusy}
+              onSubmit={(body) => {
+                void addThread(pendingComment, pendingComment.quote, body);
+                setPendingComment(null);
+              }}
+              onCancel={() => setPendingComment(null)}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -263,6 +339,7 @@ export default function SpacePage({
           {members.length} member{members.length === 1 ? "" : "s"}
         </span>
         {provider && <PresenceBar provider={provider} status={status} />}
+        <ThemeToggle />
       </header>
 
       <form className="invite-form" onSubmit={invite}>
@@ -284,6 +361,8 @@ export default function SpacePage({
           ydoc={ydoc}
           provider={provider}
           identity={identity}
+          members={members}
+          currentUserId={user?.id}
         />
       ) : (
         <p className="muted">Connecting…</p>

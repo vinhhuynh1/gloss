@@ -248,3 +248,65 @@ class StudyGuide(Base):
     guide: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class Comment(Base):
+    """One comment: a thread root when parent_id is NULL, a reply otherwise.
+
+    The first table here that is not a queue — a comment is written by a
+    person and read by people, and apps/agent-worker never touches it. See
+    006_comments.sql for why roots and replies share a table, and for the
+    CHECK constraint that keeps the two shapes from drifting.
+    """
+
+    __tablename__ = "comments"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("comments.id"), nullable=True
+    )
+    # NOT deferred, unlike study_guides.notes and sources.file_data.
+    #
+    # Those are unbounded — a whole document, a whole uploaded file — and the
+    # endpoints that poll them do not want them. A comment body is the thing
+    # the comments endpoint exists to return, and it is short by nature: there
+    # is no version of this list that is useful without the text. Bounding it
+    # in the schema (MAX_COMMENT_CHARS) is what keeps the poll cheap instead.
+    body: Mapped[str] = mapped_column(Text)
+    # Serialized Yjs relative position, roots only. Same shape as
+    # suggestions.anchor.
+    anchor: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    edited_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    # foreign_keys is required, not optional: this table has two FKs to users
+    # (author_id and resolved_by) and SQLAlchemy cannot choose between them.
+    author: Mapped["User"] = relationship(foreign_keys=[author_id])
+    mentions: Mapped[list["CommentMention"]] = relationship(
+        cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class CommentMention(Base):
+    """Who was @mentioned in a comment, parsed once on write.
+
+    A row rather than a scan of the body: see the note in 006_comments.sql.
+    Nothing sends notifications from this — it is what the UI reads to
+    highlight a mention.
+    """
+
+    __tablename__ = "comment_mentions"
+
+    comment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("comments.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )

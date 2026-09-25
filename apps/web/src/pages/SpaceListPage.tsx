@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import ThemeToggle from "../components/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 import { apiFetch } from "../lib/api";
 import type { StudySpace } from "../lib/types";
@@ -51,6 +52,7 @@ export default function SpaceListPage({
         <h1>Study spaces</h1>
         <div className="header-user">
           <span className="muted">{user?.email}</span>
+          <ThemeToggle />
           <button className="link-button" onClick={() => void signOut()}>
             Sign out
           </button>

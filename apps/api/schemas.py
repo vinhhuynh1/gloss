@@ -192,6 +192,72 @@ class StudyGuideOut(StudyGuideStatusOut):
     guide: dict | None
 
 
+# A comment, not a document. Long enough for a real explanation, short enough
+# that the comments list stays cheap to poll — this bound is why
+# Comment.body is not a deferred column the way study_guides.notes is.
+MAX_COMMENT_CHARS = 4000
+
+
+class CreateComment(BaseModel):
+    """A new thread root: body plus the passage it is about."""
+
+    body: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_COMMENT_CHARS),
+    ]
+    # Serialized Yjs relative positions, opaque to the API — same shape and
+    # same reasoning as CreateAgentRequest.anchor. Shape-checked in the router
+    # so the error names the missing key.
+    anchor: dict
+    # The passage as it read when the thread was opened, so a comment whose
+    # text is later deleted can still say what it was about.
+    quote: Annotated[str, StringConstraints(max_length=MAX_PASSAGE_CHARS)] = ""
+
+
+class CreateReply(BaseModel):
+    """A reply carries no anchor: it belongs to its parent's passage. The
+    CHECK constraint in 006_comments.sql enforces the same thing."""
+
+    body: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_COMMENT_CHARS),
+    ]
+
+
+class UpdateComment(BaseModel):
+    body: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_COMMENT_CHARS),
+    ]
+
+
+class CommentOut(ORMModel):
+    """One comment, root or reply.
+
+    Carries the author's name and email rather than only author_id: the
+    sidebar has to render "Khang said" without a second request per comment,
+    and the client has no other way to resolve a uuid to a person.
+    """
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    parent_id: uuid.UUID | None
+    author_id: uuid.UUID
+    author_name: str
+    author_email: str
+    body: str
+    # Roots only; null on every reply.
+    anchor: dict | None
+    quote: str | None
+    resolved_at: datetime | None
+    resolved_by: uuid.UUID | None
+    created_at: datetime
+    edited_at: datetime | None
+    # User ids @mentioned in this body, parsed at write time. The UI uses
+    # these to highlight; nothing here sends mail.
+    mentioned_user_ids: list[uuid.UUID]
+
+
 class CreateStudySpace(BaseModel):
     course_name: str
 
