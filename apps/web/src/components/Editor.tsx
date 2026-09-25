@@ -7,6 +7,9 @@ import { useEffect, useRef } from "react";
 import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
+import EditorToolbar from "./EditorToolbar";
+import SlashMenu from "./SlashMenu";
+import { SlashMenu as SlashMenuExtension } from "../extensions/SlashMenu";
 import {
   SuggestionHighlights,
   anchoredSuggestionIds,
@@ -61,6 +64,7 @@ export default function Editor({
       SuggestionHighlights.configure({
         onSelect: (id) => selectRef.current(id),
       }),
+      SlashMenuExtension,
       Extension.create({
         name: "askAiShortcut",
         addKeyboardShortcuts() {
@@ -128,6 +132,7 @@ export default function Editor({
 
   return (
     <div className="editor-pane">
+      <EditorToolbar editor={editor} />
       {editor && (
         <BubbleMenu editor={editor} tippyOptions={{ duration: 100, placement: "bottom" }}>
           <button
@@ -145,6 +150,9 @@ export default function Editor({
         </BubbleMenu>
       )}
       <EditorContent editor={editor} />
+      {/* Last, and a portal: see the note at the top of SlashMenu.tsx about
+          why it must not be a sibling that BubbleMenu can trip over. */}
+      <SlashMenu editor={editor} />
     </div>
   );
 }

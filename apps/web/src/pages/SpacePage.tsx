@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
+import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
 import PresenceBar from "../components/PresenceBar";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
 import SuggestionSidebar from "../components/SuggestionSidebar";
+import ThemeToggle from "../components/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
 import { applySuggestion } from "../lib/applySuggestion";
@@ -125,7 +127,13 @@ function Workspace({
       </div>
 
       <div className="app-layout">
-        <SourcesPanel spaceId={spaceId} />
+        {/* One rail, two stacked panels: where you are in the notes, and what
+            the agent may cite. Both are "about this document" navigation, and
+            a fourth column would leave the editor too narrow to read. */}
+        <div className="left-rail">
+          <DocumentOutline editor={editor} />
+          <SourcesPanel spaceId={spaceId} />
+        </div>
         {/* Kept mounted and editable in every connection state. Yjs merges
             edits made while offline on reconnect — disabling the editor
             would trade away the "no lost edits" property for a worse
@@ -263,6 +271,7 @@ export default function SpacePage({
           {members.length} member{members.length === 1 ? "" : "s"}
         </span>
         {provider && <PresenceBar provider={provider} status={status} />}
+        <ThemeToggle />
       </header>
 
       <form className="invite-form" onSubmit={invite}>
