@@ -250,6 +250,35 @@ class StudyGuide(Base):
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
+class FlashcardSet(Base):
+    """One generated deck. Same queue shape as StudyGuide — see 007.
+
+    A separate table rather than a `kind` column on study_guides: the
+    lifecycle is shared but the payload is not, and one JSONB column holding
+    either shape would make every reader branch on which it got.
+    """
+
+    __tablename__ = "flashcard_sets"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    # Deferred, like study_guides.notes: the whole document, written once by
+    # the API and read only by the worker over psycopg.
+    notes: Mapped[str] = mapped_column(Text, deferred=True)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Deferred for the same reason guide is: the status endpoint is polled
+    # every two seconds while a deck is running, and shipping every card and
+    # every cited excerpt to answer "still working" is exactly the egress
+    # mistake infra/README.md documents.
+    cards: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
 class Comment(Base):
     """One comment: a thread root when parent_id is NULL, a reply otherwise.
 
