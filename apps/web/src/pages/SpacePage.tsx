@@ -5,6 +5,7 @@ import type * as Y from "yjs";
 
 import CommentComposer from "../components/CommentComposer";
 import CommentsSidebar from "../components/CommentsSidebar";
+import DocumentList from "../components/DocumentList";
 import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
 import FlashcardsView from "../components/FlashcardsView";
@@ -22,6 +23,7 @@ import { useComments } from "../lib/useComments";
 import { useFlashcards } from "../lib/useFlashcards";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
+import { documentIdFromRoute, navigate, useHashRoute } from "../lib/useHashRoute";
 import type { Member, SpaceDocument, StudySpace, Suggestion } from "../lib/types";
 
 /** Stable per-user cursor colour, so a collaborator looks the same each session. */
@@ -44,6 +46,12 @@ function Workspace({
   identity,
   members,
   currentUserId,
+  documents,
+  docsBusy,
+  onOpenDocument,
+  onCreateDocument,
+  onRenameDocument,
+  onDeleteDocument,
 }: {
   spaceId: string;
   documentId: string;
@@ -53,6 +61,14 @@ function Workspace({
   /** For @mention completion and for rendering a mention as a name. */
   members: Member[];
   currentUserId: string | undefined;
+  /** The document rail, passed through rather than fetched here: SpacePage
+   * owns the list because it also owns the route that selects from it. */
+  documents: SpaceDocument[];
+  docsBusy: boolean;
+  onOpenDocument: (id: string) => void;
+  onCreateDocument: () => void;
+  onRenameDocument: (id: string, title: string) => void;
+  onDeleteDocument: (id: string) => void;
 }) {
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   const [anchoredIds, setAnchoredIds] = useState<string[]>([]);
@@ -203,7 +219,19 @@ function Workspace({
             the agent may cite. Both are "about this document" navigation, and
             a fourth column would leave the editor too narrow to read. */}
         <div className="left-rail">
+          <DocumentList
+            documents={documents}
+            currentId={documentId}
+            busy={docsBusy}
+            onOpen={onOpenDocument}
+            onCreate={onCreateDocument}
+            onRename={onRenameDocument}
+            onDelete={onDeleteDocument}
+          />
           <DocumentOutline editor={editor} />
+          {/* Sources stay per space, not per document: the corpus belongs to
+              the course, so a citation found for week 6 is just as valid in
+              week 7. */}
           <SourcesPanel spaceId={spaceId} />
         </div>
         {/* Kept mounted and editable in every connection state. Yjs merges
@@ -286,13 +314,15 @@ export default function SpacePage({
   spaceId: string;
   onBack: () => void;
 }) {
+  const routeDocumentId = documentIdFromRoute(useHashRoute());
   const { user, session } = useAuth();
   const [space, setSpace] = useState<StudySpace | null>(null);
-  const [doc, setDoc] = useState<SpaceDocument | null>(null);
+  const [documents, setDocuments] = useState<SpaceDocument[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
+  const [docsBusy, setDocsBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -302,13 +332,13 @@ export default function SpacePage({
     // shared link gets a clean 403 here rather than an empty editor.
     Promise.all([
       apiFetch<StudySpace>(`/study-spaces/${spaceId}`),
-      apiFetch<SpaceDocument>(`/study-spaces/${spaceId}/document`),
+      apiFetch<SpaceDocument[]>(`/study-spaces/${spaceId}/documents`),
       apiFetch<Member[]>(`/study-spaces/${spaceId}/members`),
     ])
       .then(([s, d, m]) => {
         if (!active) return;
         setSpace(s);
-        setDoc(d);
+        setDocuments(d);
         setMembers(m);
       })
       .catch((err) => {
@@ -323,6 +353,85 @@ export default function SpacePage({
       active = false;
     };
   }, [spaceId]);
+
+  /** The document the URL names, or the space's first.
+   *
+   * Falling back rather than 404ing covers three ordinary cases: a link
+   * shared before documents had their own URLs, a bookmark to a document
+   * somebody has since deleted, and the moment between the list arriving and
+   * a route change landing. */
+  const doc = useMemo(() => {
+    if (documents.length === 0) return null;
+    return documents.find((d) => d.id === routeDocumentId) ?? documents[0];
+  }, [documents, routeDocumentId]);
+
+  const openDocument = useCallback(
+    (id: string) => navigate(`/spaces/${spaceId}/docs/${id}`),
+    [spaceId]
+  );
+
+  const createDocument = useCallback(async () => {
+    setDocsBusy(true);
+    try {
+      const created = await apiFetch<SpaceDocument>(
+        `/study-spaces/${spaceId}/documents`,
+        { method: "POST", body: JSON.stringify({ title: "Untitled" }) }
+      );
+      setDocuments((ds) => [...ds, created]);
+      // Straight into it — someone who clicks New wants to start typing, not
+      // to then find the new page in a list.
+      openDocument(created.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add a document");
+    } finally {
+      setDocsBusy(false);
+    }
+  }, [spaceId, openDocument]);
+
+  const renameDocument = useCallback(async (id: string, title: string) => {
+    // Optimistic: a rename is a label change that cannot fail in a way the
+    // reader cares about, and waiting a round trip to see your own typing
+    // appear is worse than the rare revert below.
+    setDocuments((ds) => ds.map((d) => (d.id === id ? { ...d, title } : d)));
+    try {
+      const saved = await apiFetch<SpaceDocument>(`/documents/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+      });
+      setDocuments((ds) => ds.map((d) => (d.id === id ? saved : d)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename");
+    }
+  }, []);
+
+  const deleteDocument = useCallback(
+    async (id: string) => {
+      // Everything anchored to the document goes with it — suggestions,
+      // comments, guides, decks — so this asks first. The API also refuses
+      // the last document in a space with a 409.
+      const target = documents.find((d) => d.id === id);
+      if (
+        !window.confirm(
+          `Delete “${target?.title ?? "this document"}”? Its notes, comments ` +
+            `and generated guides go with it. This cannot be undone.`
+        )
+      ) {
+        return;
+      }
+      setDocsBusy(true);
+      try {
+        await apiFetch<void>(`/documents/${id}`, { method: "DELETE" });
+        const left = documents.filter((d) => d.id !== id);
+        setDocuments(left);
+        if (doc?.id === id && left[0]) openDocument(left[0].id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not delete");
+      } finally {
+        setDocsBusy(false);
+      }
+    },
+    [documents, doc, openDocument]
+  );
 
   const identity = useMemo(
     () =>
@@ -402,6 +511,7 @@ export default function SpacePage({
 
       {doc && identity && provider ? (
         <Workspace
+          key={doc.id}
           spaceId={spaceId}
           documentId={doc.id}
           ydoc={ydoc}
@@ -409,6 +519,12 @@ export default function SpacePage({
           identity={identity}
           members={members}
           currentUserId={user?.id}
+          documents={documents}
+          docsBusy={docsBusy}
+          onOpenDocument={openDocument}
+          onCreateDocument={() => void createDocument()}
+          onRenameDocument={(id, title) => void renameDocument(id, title)}
+          onDeleteDocument={(id) => void deleteDocument(id)}
         />
       ) : (
         <p className="muted">Connecting…</p>

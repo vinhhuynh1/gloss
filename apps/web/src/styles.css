@@ -936,6 +936,80 @@ button:disabled {
   background: var(--accent-tint);
 }
 
+/* --- document list ---
+   Top of the left rail: the outline says where you are inside a document,
+   this says which document you are in, and that is the wider question. */
+
+.documents-panel {
+  padding: 1.5rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.documents-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.documents-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.documents-head .link-button {
+  font-size: 0.78rem;
+}
+
+.document-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+}
+
+/* Unsets the global accent-filled button, like .toolbar-button. */
+.document-item {
+  display: block;
+  width: 100%;
+  padding: 0.22rem 0.35rem;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  text-align: left;
+  /* Titles are arbitrary length in a 280px rail; the full one is in the
+     tooltip, as with .source-name and .outline-item. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-item:hover {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.document-item.is-current {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.document-item-actions {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.1rem 0.35rem 0.25rem;
+  font-size: 0.72rem;
+}
+
+.document-rename {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.18rem 0.3rem;
+  font-size: 0.85rem;
+}
+
 /* --- flashcards ---
    Narrower than the study guide's 46rem: a card is one question and one
    answer, and a wide column makes a short answer look lost in it. */
@@ -1368,6 +1442,7 @@ button:disabled {
     border-top: 1px solid var(--border);
   }
 
+  .documents-panel,
   .outline-panel,
   .sources-panel,
   .suggestion-sidebar,
