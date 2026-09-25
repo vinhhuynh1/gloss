@@ -936,6 +936,249 @@ button:disabled {
   background: var(--accent-tint);
 }
 
+/* --- comments ---
+   A fourth rail would leave the notes unreadable, so this one shares the
+   right edge with the suggestions sidebar: two stacked panels, one scroll
+   each, the same arrangement the left rail uses for outline + sources. */
+
+.comments-sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.comments-sidebar h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.comment-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.comment-filter input {
+  width: auto;
+  padding: 0;
+}
+
+.comment-thread {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 0.75rem;
+  transition: box-shadow 0.15s;
+}
+
+.comment-thread.comment-focused {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* A resolved thread stays readable but stops competing for attention — it is
+   kept for the record, not for action. */
+.comment-thread.comment-resolved {
+  border-left-color: var(--border-strong);
+  opacity: 0.7;
+}
+
+/* The passage is gone; the quote snapshot is all that is left of it. */
+.comment-thread.comment-detached {
+  border-left-style: dashed;
+  border-left-color: var(--warn-amber);
+}
+
+.comment-detached-note {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+}
+
+.comment-quote {
+  margin: 0 0 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.comment-row {
+  margin-bottom: 0.5rem;
+}
+
+.comment-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.comment-author {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.comment-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.comment-body {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  /* Comments are typed in a textarea, so the newlines someone put in are
+     part of what they wrote. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mention {
+  padding: 0 0.15rem;
+  border-radius: 3px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.comment-row-actions,
+.comment-thread-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+}
+
+/* Replies indent under the root, with a rule down the left so a long thread
+   still reads as one conversation. */
+.comment-reply {
+  margin-left: 0.6rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border);
+}
+
+.comment-composer {
+  position: relative;
+  margin-top: 0.4rem;
+}
+
+.comment-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.comment-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
+.comment-composer-actions button:not(.link-button) {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+/* --- @mention completion --- */
+
+.mention-menu {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0.2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--shadow);
+}
+
+.mention-item {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+
+.mention-item.is-selected,
+.mention-item:hover {
+  background: var(--accent-tint);
+}
+
+.mention-name {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.mention-email {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* --- the commented passage, in the document --- */
+
+.comment-highlight {
+  background: var(--accent-tint);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.comment-button {
+  padding: 0.3rem 0.6rem;
+  margin-left: 0.3rem;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+/* --- new-thread composer ---
+   Over the page, anchored to nothing: it belongs to the passage selected
+   right now, and a box 300px away in the rail reads as unrelated to it. */
+
+.comment-draft-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 0.25);
+}
+
+.comment-draft {
+  width: min(100%, 26rem);
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px var(--shadow);
+}
+
 /* --- narrow screens ---
    The three rails are a desktop shape: 280 + 320px of chrome leaves nothing
    for the notes on a phone. Below this width they stop being columns and
@@ -964,7 +1207,8 @@ button:disabled {
   }
 
   .left-rail,
-  .suggestion-sidebar {
+  .suggestion-sidebar,
+  .comments-sidebar {
     width: auto;
     max-height: 45vh;
     border-right: none;
@@ -974,7 +1218,8 @@ button:disabled {
 
   .outline-panel,
   .sources-panel,
-  .suggestion-sidebar {
+  .suggestion-sidebar,
+  .comments-sidebar {
     padding: 1rem;
   }
 
@@ -1038,6 +1283,8 @@ button:disabled {
   .study-guide-actions,
   .editor-toolbar,
   .theme-toggle,
+  .slash-menu,
+  .comment-draft-backdrop,
   .app-layout {
     display: none !important;
   }
