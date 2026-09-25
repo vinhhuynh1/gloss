@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
+import AnnotationMargin from "../components/AnnotationMargin";
 import CommentComposer from "../components/CommentComposer";
-import CommentsSidebar from "../components/CommentsSidebar";
 import DocumentList from "../components/DocumentList";
 import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
@@ -12,7 +12,6 @@ import FlashcardsView from "../components/FlashcardsView";
 import PresenceBar from "../components/PresenceBar";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
-import SuggestionSidebar from "../components/SuggestionSidebar";
 import ThemeToggle from "../components/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
@@ -24,7 +23,13 @@ import { useFlashcards } from "../lib/useFlashcards";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import { documentIdFromRoute, navigate, useHashRoute } from "../lib/useHashRoute";
-import type { Member, SpaceDocument, StudySpace, Suggestion } from "../lib/types";
+import type {
+  AnchoredAnnotation,
+  Member,
+  SpaceDocument,
+  StudySpace,
+  Suggestion,
+} from "../lib/types";
 
 /** Stable per-user cursor colour, so a collaborator looks the same each session. */
 function colorFromUserId(id: string): string {
@@ -71,7 +76,10 @@ function Workspace({
   onDeleteDocument: (id: string) => void;
 }) {
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
-  const [anchoredIds, setAnchoredIds] = useState<string[]>([]);
+  // Suggestions and threads together, in document order — see AnnotationMargin.
+  const [annotations, setAnnotations] = useState<AnchoredAnnotation[]>([]);
+  // One focus for both kinds: they share a column, so only one card can be
+  // the one you are looking at.
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const { suggestions, requests, error, notice, setNotice, ask, resolve, dismissRequest } =
@@ -88,8 +96,6 @@ function Workspace({
     setResolved,
     removeComment,
   } = useComments(documentId);
-  const [anchoredCommentIds, setAnchoredCommentIds] = useState<string[]>([]);
-  const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
   // The passage a new thread is being written about, held until the composer
   // is submitted. Null when nobody is composing.
   const [pendingComment, setPendingComment] = useState<PassageAnchor | null>(null);
@@ -247,35 +253,29 @@ function Workspace({
           onAskAi={ask}
           onComment={setPendingComment}
           onSelectSuggestion={setFocusedId}
-          onSelectComment={setFocusedCommentId}
-          onAnchoredChange={setAnchoredIds}
-          onAnchoredCommentsChange={setAnchoredCommentIds}
+          onSelectComment={setFocusedId}
+          onAnnotationsChange={setAnnotations}
           onEditor={setEditor}
         />
-        <SuggestionSidebar
+        <AnnotationMargin
+          annotations={annotations}
           suggestions={suggestions}
+          threads={threads}
           requests={requests}
-          anchoredIds={anchoredIds}
           focusedId={focusedId}
+          members={members}
+          currentUserId={currentUserId}
           error={error}
+          commentsError={commentsError}
           notice={notice}
+          busy={commentsBusy}
+          onFocus={setFocusedId}
           onAccept={(s) => void accept(s)}
           onReject={reject}
           onDismissRequest={dismissRequest}
-          onFocus={setFocusedId}
-        />
-        <CommentsSidebar
-          threads={threads}
-          anchoredIds={anchoredCommentIds}
-          focusedId={focusedCommentId}
-          members={members}
-          currentUserId={currentUserId}
-          error={commentsError}
-          busy={commentsBusy}
-          onFocus={setFocusedCommentId}
           onReply={(id, body) => void addReply(id, body)}
-          onEdit={(id, body) => void editComment(id, body)}
-          onDelete={(id) => void removeComment(id)}
+          onEditComment={(id, body) => void editComment(id, body)}
+          onDeleteComment={(id) => void removeComment(id)}
           onResolve={(id, resolved) => void setResolved(id, resolved)}
         />
       </div>

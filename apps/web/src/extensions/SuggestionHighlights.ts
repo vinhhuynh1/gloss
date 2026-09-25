@@ -135,3 +135,18 @@ export const SuggestionHighlights = Extension.create<SuggestionHighlightsOptions
     ];
   },
 });
+
+/** Anchored ids with the document position each one sits at.
+ *
+ * The annotation margin orders everything said about the text by where in the
+ * text it was said, so it needs the position, not just the id. Reading it off
+ * the decoration set rather than re-resolving the Yjs anchors is what keeps
+ * this correct during a local edit, when ProseMirror has moved and Yjs has
+ * not — the decorations were already mapped through that transaction. */
+export function anchoredSuggestionPositions(state: EditorState): { id: string; from: number }[] {
+  const set = suggestionHighlightsKey.getState(state)?.decorations;
+  return (set?.find() ?? []).map((d) => ({
+    id: d.spec.suggestionId as string,
+    from: d.from,
+  }));
+}
