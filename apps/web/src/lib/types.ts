@@ -139,6 +139,41 @@ export interface StudyGuideRow extends StudyGuideStatusRow {
   guide: Guide | null;
 }
 
+/** Generation state of a deck. Same queue as a study guide, and the API only
+ * ever creates it as pending — see apps/agent-worker/worker.py. */
+export type FlashcardsStatus = "pending" | "processing" | "done" | "failed";
+
+/** One card. The source fields are copied from the cited chunk at write time,
+ * so a card still says where its answer came from after the next re-chunk —
+ * same contract as GuidePoint. */
+export interface Flashcard {
+  front: string;
+  back: string;
+  source_chunk_id: string;
+  source_filename: string | null;
+  source_page_ref: string | null;
+  source_excerpt: string | null;
+}
+
+export interface Deck {
+  title: string;
+  cards: Flashcard[];
+}
+
+export interface FlashcardsStatusRow {
+  id: string;
+  document_id: string;
+  status: FlashcardsStatus;
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface FlashcardsRow extends FlashcardsStatusRow {
+  cards: Deck | null;
+}
+
 /**
  * One comment — a thread root when `parent_id` is null, a reply otherwise.
  *

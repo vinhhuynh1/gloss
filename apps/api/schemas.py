@@ -192,6 +192,45 @@ class StudyGuideOut(StudyGuideStatusOut):
     guide: dict | None
 
 
+class CreateFlashcards(BaseModel):
+    """Same body as CreateStudyGuide, and the same bound: the whole notes
+    document, sent by the client because documents.crdt_snapshot is a Yjs
+    update nothing in Python can decode."""
+
+    notes: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
+    ]
+
+
+class FlashcardsStatusOut(ORMModel):
+    """Is it ready yet — the shape the editor polls.
+
+    Carries no `cards` and no `notes`, both deferred on the model. A poll that
+    answered "still working" by dragging the whole deck across the wire is the
+    egress mistake this codebase has already made once.
+    """
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    status: str  # pending | processing | done | failed
+    attempts: int
+    error: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class FlashcardsOut(FlashcardsStatusOut):
+    """The finished deck, fetched once after the poll reports 'done'.
+
+    `cards` stays a plain dict for the same reason `guide` does: its shape is
+    the model's structured output (CARDS_SCHEMA in
+    apps/agent-worker/flashcards.py), and declaring it twice would mean two
+    places to change and a 500 for any deck written before the change.
+    """
+
+    cards: dict | None
+
+
 # A comment, not a document. Long enough for a real explanation, short enough
 # that the comments list stays cheap to poll — this bound is why
 # Comment.body is not a deferred column the way study_guides.notes is.
