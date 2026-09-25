@@ -936,6 +936,158 @@ button:disabled {
   background: var(--accent-tint);
 }
 
+/* --- flashcards ---
+   Narrower than the study guide's 46rem: a card is one question and one
+   answer, and a wide column makes a short answer look lost in it. */
+
+.flashcards {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.flashcards-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.flashcards-modes {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  background: var(--accent-tint);
+  border-radius: 8px;
+}
+
+/* Unsets the global accent-filled button: only the selected tab is filled,
+   or the pair reads as two separate actions rather than one choice. */
+.flashcards-modes button {
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.flashcards-modes button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.flashcards-title {
+  font-size: 1.4rem;
+  margin: 0 0 0.3rem;
+}
+
+.flashcards-generated {
+  margin: 0 0 1.5rem;
+  font-size: 0.8rem;
+}
+
+/* min-height rather than a fixed height: the card must not resize when the
+   answer appears, or the controls jump out from under the cursor mid-click. */
+.flashcard {
+  min-height: 12rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 2px 12px var(--shadow);
+  cursor: pointer;
+}
+
+.flashcard-front {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.flashcard-back {
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.flashcard-hint {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.flashcard-source {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.flashcard-source summary {
+  cursor: pointer;
+}
+
+.flashcard-source p {
+  margin: 0.35rem 0 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.flashcards-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.flashcards-position {
+  font-size: 0.8rem;
+}
+
+.flashcards-grade {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.flashcards-grade button {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.flashcards-score {
+  padding: 2rem 1.5rem;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.flashcards-score-line {
+  margin: 0 0 0.5rem;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.flashcards-score-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  align-items: center;
+  margin-top: 1.25rem;
+}
+
 /* --- comments ---
    A fourth rail would leave the notes unreadable, so this one shares the
    right edge with the suggestions sidebar: two stacked panels, one scroll
@@ -1246,7 +1398,8 @@ button:disabled {
     padding: 0.6rem 1rem;
   }
 
-  .study-guide {
+  .study-guide,
+  .flashcards {
     padding: 1.5rem 1rem 3rem;
   }
 }

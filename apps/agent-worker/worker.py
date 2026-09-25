@@ -34,6 +34,7 @@ import psycopg
 from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
 
+import flashcards
 import study_guide
 from agent import check_passage, cited_chunk
 from embeddings import embed_batch
@@ -421,6 +422,138 @@ def study_guides_available(conn) -> bool:
         return bool(cur.fetchone()[0])
 
 
+def flashcards_available(conn) -> bool:
+    """Does the flashcard_sets table exist yet?
+
+    The same guard as study_guides_available, for the same reason and with the
+    same history: 005 was merged before it was applied and the worker
+    crash-looped until someone noticed. Checked once at startup so a deploy
+    that gets ahead of its migration costs the flashcard queue and nothing
+    else.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.flashcard_sets') IS NOT NULL")
+        return bool(cur.fetchone()[0])
+
+
+def reclaim_stale_flashcards(conn) -> int:
+    """Same as reclaim_stale, for the flashcard queue."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE flashcard_sets
+               SET status = 'pending', claimed_at = NULL
+             WHERE status = 'processing'
+               AND claimed_at < now() - make_interval(secs => %s)
+            """,
+            (AGENT_STALE_CLAIM_SECONDS,),
+        )
+        return cur.rowcount
+
+
+def claim_next_flashcard_set(conn):
+    """Claim one pending deck, or return None.
+
+    Same shape as claim_next_study_guide, including the wait on unsettled
+    uploads: a deck generated while half the slides are still being chunked
+    would silently cover half the course, and nothing about the finished deck
+    would say so.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE flashcard_sets fs
+               SET status = 'processing',
+                   claimed_at = now(),
+                   attempts = fs.attempts + 1
+              FROM documents d
+             WHERE fs.id = (
+                   SELECT f.id
+                     FROM flashcard_sets f
+                     JOIN documents fd ON fd.id = f.document_id
+                    WHERE f.status = 'pending'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM sources s
+                           WHERE s.study_space_id = fd.study_space_id
+                             AND s.status IN ('pending', 'processing')
+                      )
+                    ORDER BY f.created_at
+                      FOR UPDATE OF f SKIP LOCKED
+                    LIMIT 1
+             )
+               AND d.id = fs.document_id
+         RETURNING fs.id, d.study_space_id, fs.notes, fs.attempts
+            """
+        )
+        return cur.fetchone()
+
+
+def _fail_flashcard_set(conn, set_id, attempts: int, message: str, *, retry: bool):
+    """Mirror of _fail_study_guide for the flashcard queue."""
+    give_up = not retry or attempts >= MAX_ATTEMPTS
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE flashcard_sets
+               SET status = %s, error = %s, claimed_at = NULL,
+                   finished_at = CASE WHEN %s THEN now() END
+            WHERE id = %s
+            """,
+            ("failed" if give_up else "pending", message[:MAX_ERROR_CHARS], give_up, set_id),
+        )
+    verb = "failed" if give_up else f"will retry ({attempts}/{MAX_ATTEMPTS})"
+    print(f"  {verb}: {message[:200]}")
+
+
+def process_flashcard_set(conn, row) -> bool:
+    """Generate one deck for a claimed row. Returns True on success."""
+    set_id, study_space_id, notes, attempts = row
+    print(f"Writing flashcards {set_id}")
+
+    try:
+        deck, _chunks = flashcards.generate(str(study_space_id), notes)
+    except study_guide.EmptyNotesError as exc:
+        # Nothing to write from, and nothing a retry would change.
+        _fail_flashcard_set(conn, set_id, attempts, str(exc), retry=False)
+        return False
+    except Exception as exc:  # noqa: BLE001 — every failure is the requester's to see
+        message, retry = _describe_agent_error(exc)
+        _fail_flashcard_set(conn, set_id, attempts, message, retry=retry)
+        return False
+
+    if not deck["cards"]:
+        # Every card the model wrote cited an excerpt it was never given, so
+        # _validate_deck dropped them all. One retry is worth it — this is a
+        # bad sample, not a bad document.
+        _fail_flashcard_set(
+            conn,
+            set_id,
+            attempts,
+            "The deck came back with nothing that could be traced to your "
+            "source material, so it was discarded rather than shown.",
+            retry=True,
+        )
+        return False
+
+    # `attempts` is this claim's token, exactly as in process_study_guide.
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE flashcard_sets
+               SET status = 'done', cards = %s, error = NULL, claimed_at = NULL,
+                   finished_at = now()
+             WHERE id = %s AND attempts = %s
+            """,
+            (Jsonb(deck), set_id, attempts),
+        )
+        if cur.rowcount == 0:
+            print("  claim was reclaimed by another worker; discarding this result")
+            return False
+
+    print(f"  {len(deck['cards'])} cards")
+    return True
+
+
 def reclaim_stale_study_guides(conn) -> int:
     """Same as reclaim_stale, for the study-guide queue."""
     with conn.cursor() as cur:
@@ -581,10 +714,21 @@ def run(once: bool = False):
             print("         restart this worker. Uploads and checks are "
                   "unaffected.")
 
+        cards_on = flashcards_available(conn)
+        if not cards_on:
+            print("WARNING: no flashcard_sets table — flashcards are OFF "
+                  "for this process.")
+            print("         Apply infra/migrations/007_flashcards.sql, re-run")
+            print("         infra/supabase/011_lockdown.sql on Supabase, then")
+            print("         restart this worker. Everything else is "
+                  "unaffected.")
+
         while True:
             reclaimed = reclaim_stale(conn) + reclaim_stale_agent_requests(conn)
             if guides_on:
                 reclaimed += reclaim_stale_study_guides(conn)
+            if cards_on:
+                reclaimed += reclaim_stale_flashcards(conn)
             if reclaimed:
                 print(f"Reclaimed {reclaimed} stale claim(s)")
 
@@ -604,6 +748,15 @@ def run(once: bool = False):
                 process_study_guide(conn, guide)
                 continue
 
+            # Decks after guides. Both are one long call and neither is
+            # interactive, so the order between them only decides who waits
+            # when both are queued; guides came first and keep the seniority.
+            deck = claim_next_flashcard_set(conn) if cards_on else None
+            if deck is not None:
+                idle_logged = False
+                process_flashcard_set(conn, deck)
+                continue
+
             row = claim_next(conn)
             if row is not None:
                 idle_logged = False
@@ -614,10 +767,25 @@ def run(once: bool = False):
                 print("Queue empty.")
                 return
             if not idle_logged:
-                jobs = "uploads, checks and guides" if guides_on else (
-                    "uploads and checks (guides OFF)"
+                # Names what this process will actually pick up, so a queue
+                # that is off for a missing migration is visible in the log
+                # rather than looking like an empty queue.
+                jobs = ["uploads", "checks"]
+                if guides_on:
+                    jobs.append("guides")
+                if cards_on:
+                    jobs.append("flashcards")
+                off = [
+                    name
+                    for name, on in (("guides", guides_on), ("flashcards", cards_on))
+                    if not on
+                ]
+                listed = ", ".join(jobs[:-1]) + " and " + jobs[-1]
+                suffix = f" ({', '.join(off)} OFF)" if off else ""
+                print(
+                    f"Waiting for {listed}{suffix} "
+                    f"(polling every {POLL_INTERVAL_SECONDS}s)…"
                 )
-                print(f"Waiting for {jobs} (polling every {POLL_INTERVAL_SECONDS}s)…")
                 idle_logged = True
             time.sleep(POLL_INTERVAL_SECONDS)
 
