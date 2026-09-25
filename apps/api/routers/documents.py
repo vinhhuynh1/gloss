@@ -1,14 +1,15 @@
 import base64
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth import CurrentUser
 from authz import require_document
 from database import get_db
-from schemas import DocumentWithSnapshotOut
+from models import Document
+from schemas import DocumentOut, DocumentWithSnapshotOut, RenameDocument
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -68,3 +69,47 @@ def save_snapshot(
     doc.crdt_snapshot = base64.b64decode(body.crdt_snapshot)
     db.commit()
     return {"status": "saved"}
+
+
+@router.patch("/{document_id}", response_model=DocumentOut)
+def rename_document(
+    document_id: uuid.UUID,
+    body: RenameDocument,
+    user: CurrentUser,
+    db: Session = Depends(get_db),
+):
+    """Rename a document. Any member, like creating one — the title is a label
+    on shared work, not a claim of ownership."""
+    doc = require_document(document_id, user, db)
+    doc.title = body.title
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: uuid.UUID, user: CurrentUser, db: Session = Depends(get_db)
+):
+    """Delete a document and everything anchored to it.
+
+    The foreign keys cascade: suggestions, agent_requests, study_guides,
+    flashcard_sets and comments all go with it. That is a lot to lose on a
+    misclick, so the UI confirms first.
+
+    A space must keep at least one document. Without this the editor would
+    have nothing to open and the next visitor would silently get a fresh
+    empty one from _first_document, which reads as "my notes are gone"
+    rather than as "the last document cannot be deleted".
+    """
+    doc = require_document(document_id, user, db)
+    remaining = db.query(Document).filter(
+        Document.study_space_id == doc.study_space_id
+    ).count()
+    if remaining <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A study space needs at least one document.",
+        )
+    db.delete(doc)
+    db.commit()

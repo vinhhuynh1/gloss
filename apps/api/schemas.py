@@ -58,7 +58,33 @@ class MemberOut(BaseModel):
 class DocumentOut(ORMModel):
     id: uuid.UUID
     study_space_id: uuid.UUID
+    title: str
     updated_at: datetime
+    created_at: datetime
+
+
+# Long enough for "Week 7 — oxidative phosphorylation", short enough that the
+# document rail does not have to truncate every entry.
+MAX_DOCUMENT_TITLE_CHARS = 120
+
+DocumentTitle = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=MAX_DOCUMENT_TITLE_CHARS
+    ),
+]
+
+
+class CreateDocument(BaseModel):
+    """Title is optional: a document created from the "New" button has no name
+    until someone gives it one, and blocking on that is friction in front of
+    the thing they actually wanted to do, which is type."""
+
+    title: DocumentTitle = "Untitled"
+
+
+class RenameDocument(BaseModel):
+    title: DocumentTitle
 
 
 class DocumentWithSnapshotOut(DocumentOut):
