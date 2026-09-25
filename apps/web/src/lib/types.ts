@@ -14,7 +14,9 @@ export interface StudySpace {
 export interface SpaceDocument {
   id: string;
   study_space_id: string;
+  title: string;
   updated_at: string;
+  created_at: string;
 }
 
 export interface Member {

@@ -90,7 +90,14 @@ class Document(Base):
     crdt_snapshot: Mapped[bytes | None] = mapped_column(
         LargeBinary, nullable=True, deferred=True
     )
+    # A name for the tab. NOT NULL with a server default (008), so every row
+    # that predates the column is already valid.
+    title: Mapped[str] = mapped_column(Text, default="Untitled")
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    # Ordering for the document list. Deliberately not updated_at: sorting a
+    # sidebar by last-edited reshuffles it under the reader as somebody types,
+    # so the entry they were about to click moves.
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     study_space: Mapped["StudySpace"] = relationship(back_populates="documents")
     suggestions: Mapped[list["Suggestion"]] = relationship(

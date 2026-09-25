@@ -35,10 +35,24 @@ export function navigate(path: string): void {
   window.location.hash = path;
 }
 
-const SPACE_ROUTE =
-  /^\/spaces\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+/** `/spaces/<uuid>` and `/spaces/<uuid>/docs/<uuid>`.
+ *
+ * The document segment is optional so every link shared before documents had
+ * their own URLs still opens — it now means "this space's first document",
+ * which is what it always meant. */
+const SPACE_ROUTE = new RegExp(`^/spaces/(${UUID})(?:/docs/(${UUID}))?$`, "i");
 
 /** The study-space id in `route`, or null if this is not a space route. */
 export function spaceIdFromRoute(route: string): string | null {
   return SPACE_ROUTE.exec(route)?.[1] ?? null;
+}
+
+/** The document id in `route`, or null when the route names only a space.
+ *
+ * Null is not an error: it means "whichever document this space opens with",
+ * and SpacePage resolves that once the list has loaded. */
+export function documentIdFromRoute(route: string): string | null {
+  return SPACE_ROUTE.exec(route)?.[2] ?? null;
 }
