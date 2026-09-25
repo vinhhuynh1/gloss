@@ -9,6 +9,11 @@ import type * as Y from "yjs";
 
 import EditorToolbar from "./EditorToolbar";
 import SlashMenu from "./SlashMenu";
+import {
+  CommentHighlights,
+  anchoredCommentIds,
+  setHighlightedThreads,
+} from "../extensions/CommentHighlights";
 import { SlashMenu as SlashMenuExtension } from "../extensions/SlashMenu";
 import {
   SuggestionHighlights,
@@ -16,7 +21,7 @@ import {
   setHighlightedSuggestions,
 } from "../extensions/SuggestionHighlights";
 import { type PassageAnchor, selectionToAnchor } from "../lib/anchors";
-import type { Suggestion } from "../lib/types";
+import type { CommentThread, Suggestion } from "../lib/types";
 
 interface EditorProps {
   ydoc: Y.Doc;
@@ -24,12 +29,20 @@ interface EditorProps {
   user: { name: string; color: string };
   /** Pending suggestions to highlight. */
   suggestions: Suggestion[];
+  /** Unresolved comment threads to highlight. */
+  threads: CommentThread[];
   /** The user asked for the selected passage to be checked. */
   onAskAi: (anchor: PassageAnchor) => void;
+  /** The user asked to comment on the selected passage. */
+  onComment: (anchor: PassageAnchor) => void;
   /** A highlight was clicked. */
   onSelectSuggestion: (suggestionId: string) => void;
+  /** A comment highlight was clicked. */
+  onSelectComment: (commentId: string) => void;
   /** Which suggestions currently have a highlight, i.e. can still be applied. */
   onAnchoredChange: (ids: string[]) => void;
+  /** Which threads still have a highlight; the rest are detached. */
+  onAnchoredCommentsChange: (ids: string[]) => void;
   /** The editor instance, for applying accepted suggestions. */
   onEditor: (editor: TiptapEditor | null) => void;
 }
@@ -39,9 +52,13 @@ export default function Editor({
   provider,
   user,
   suggestions,
+  threads,
   onAskAi,
+  onComment,
   onSelectSuggestion,
+  onSelectComment,
   onAnchoredChange,
+  onAnchoredCommentsChange,
   onEditor,
 }: EditorProps) {
   // useEditor runs with no deps and captures its options once (see the note
@@ -49,8 +66,12 @@ export default function Editor({
   // callbacks the extensions call go through refs that always hold the latest.
   const askRef = useRef(onAskAi);
   askRef.current = onAskAi;
+  const commentRef = useRef(onComment);
+  commentRef.current = onComment;
   const selectRef = useRef(onSelectSuggestion);
   selectRef.current = onSelectSuggestion;
+  const selectCommentRef = useRef(onSelectComment);
+  selectCommentRef.current = onSelectComment;
 
   const editor = useEditor({
     // No `content` option, deliberately. The Y.Doc is the document; passing
@@ -63,6 +84,9 @@ export default function Editor({
       CollaborationCursor.configure({ provider, user }),
       SuggestionHighlights.configure({
         onSelect: (id) => selectRef.current(id),
+      }),
+      CommentHighlights.configure({
+        onSelect: (id) => selectCommentRef.current(id),
       }),
       SlashMenuExtension,
       Extension.create({
@@ -98,6 +122,13 @@ export default function Editor({
     editor.view.dispatch(setHighlightedSuggestions(editor.state, suggestions));
   }, [editor, suggestions]);
 
+  // Same, for comment threads. A separate dispatch into a separate plugin —
+  // see the note at the top of extensions/CommentHighlights.ts.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.view.dispatch(setHighlightedThreads(editor.state, threads));
+  }, [editor, threads]);
+
   // Report which suggestions still have a highlight. Checked after every
   // transaction, because a collaborator deleting a passage is what removes one.
   const anchoredRef = useRef("");
@@ -118,15 +149,37 @@ export default function Editor({
     };
   }, [editor, onAnchoredChange]);
 
-  function askFromSelection() {
+  // Same for threads: a thread whose passage a collaborator deleted stops
+  // being anchored, and the sidebar marks it detached rather than pretending
+  // it still points at something.
+  const anchoredCommentsRef = useRef("");
+  useEffect(() => {
     if (!editor) return;
-    // Read from editor state, not the DOM: clicking the button blurs the
-    // editor, but ProseMirror keeps the selection in its state across a blur.
+    const report = () => {
+      const ids = anchoredCommentIds(editor.state).sort();
+      const key = ids.join(",");
+      if (key !== anchoredCommentsRef.current) {
+        anchoredCommentsRef.current = key;
+        onAnchoredCommentsChange(ids);
+      }
+    };
+    report();
+    editor.on("transaction", report);
+    return () => {
+      editor.off("transaction", report);
+    };
+  }, [editor, onAnchoredCommentsChange]);
+
+  /** The bubble-menu actions differ only in which callback they hand the
+   * anchor to, so they share everything else: read the selection from editor
+   * state rather than the DOM (the click blurs the editor, but ProseMirror
+   * keeps its selection across a blur), then collapse to the end of the
+   * passage, which is also what hides the bubble. */
+  function fromSelection(hand: (anchor: PassageAnchor) => void) {
+    if (!editor) return;
     const anchor = selectionToAnchor(editor.state);
     if (!anchor) return;
-    onAskAi(anchor);
-    // Back into the editor with the selection collapsed to the end of the
-    // passage, which is also what hides the bubble.
+    hand(anchor);
     editor.chain().focus().setTextSelection(editor.state.selection.to).run();
   }
 
@@ -142,10 +195,17 @@ export default function Editor({
             // not hide the menu mid-click; suppress that blur and the flag
             // is left set, swallows the next real blur, and the bubble
             // sticks on screen after the editor loses focus.
-            onClick={askFromSelection}
+            onClick={() => fromSelection(askRef.current)}
             title="Check this passage against the course material (Ctrl+Alt+M)"
           >
             ✨ Check with AI
+          </button>
+          <button
+            className="comment-button"
+            onClick={() => fromSelection(commentRef.current)}
+            title="Comment on this passage"
+          >
+            💬 Comment
           </button>
         </BubbleMenu>
       )}

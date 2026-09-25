@@ -138,3 +138,38 @@ export interface StudyGuideStatusRow {
 export interface StudyGuideRow extends StudyGuideStatusRow {
   guide: Guide | null;
 }
+
+/**
+ * One comment — a thread root when `parent_id` is null, a reply otherwise.
+ *
+ * Roots carry the anchor and the resolution; replies carry neither, and the
+ * API enforces that with a CHECK constraint (006_comments.sql). The author's
+ * name and email are flattened onto the row so the sidebar can render
+ * "who said it" without a lookup per comment.
+ */
+export interface Comment {
+  id: string;
+  document_id: string;
+  parent_id: string | null;
+  author_id: string;
+  author_name: string;
+  author_email: string;
+  body: string;
+  /** Roots only. Same shape as Suggestion.anchor — see lib/anchors.ts. */
+  anchor: Anchor | null;
+  /** The passage as it read when the thread was opened, so a comment whose
+   * text is later deleted can still say what it was about. */
+  quote: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  created_at: string;
+  edited_at: string | null;
+  mentioned_user_ids: string[];
+}
+
+/** A root plus its replies, assembled on the client — the API returns one
+ * flat list because the editor needs every row anyway to draw highlights. */
+export interface CommentThread {
+  root: Comment;
+  replies: Comment[];
+}
