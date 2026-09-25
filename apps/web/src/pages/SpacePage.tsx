@@ -7,6 +7,7 @@ import CommentComposer from "../components/CommentComposer";
 import CommentsSidebar from "../components/CommentsSidebar";
 import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
+import FlashcardsView from "../components/FlashcardsView";
 import PresenceBar from "../components/PresenceBar";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
@@ -18,6 +19,7 @@ import type { PassageAnchor } from "../lib/anchors";
 import { applySuggestion } from "../lib/applySuggestion";
 import { useCollabProvider } from "../lib/useCollabProvider";
 import { useComments } from "../lib/useComments";
+import { useFlashcards } from "../lib/useFlashcards";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import type { Member, SpaceDocument, StudySpace, Suggestion } from "../lib/types";
@@ -101,24 +103,45 @@ function Workspace({
   } = useStudyGuide(documentId);
   const [showGuide, setShowGuide] = useState(false);
 
+  const {
+    row: deckRow,
+    deck,
+    error: deckError,
+    asking: askingDeck,
+    running: deckRunning,
+    workerSuspect: deckWorkerSuspect,
+    ask: askDeck,
+  } = useFlashcards(documentId);
+  const [showDeck, setShowDeck] = useState(false);
+
+  /** The notes as the worker wants them.
+   *
+   * textBetween with a "\n\n" block separator, not getText(): both generators
+   * split on blank lines to decide what to retrieve for, so the block
+   * boundaries are the part that has to survive. Same call anchors.ts uses to
+   * snapshot a passage. */
+  const readNotes = useCallback(() => {
+    if (!editor) return null;
+    return editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n\n");
+  }, [editor]);
+
   const requestGuide = useCallback(() => {
-    if (!editor) return;
-    // textBetween with a "\n\n" block separator, not getText(): the worker
-    // splits the notes on blank lines to decide what to retrieve for, so the
-    // block boundaries are the part that has to survive. Same call anchors.ts
-    // uses to snapshot a passage.
-    const notes = editor.state.doc.textBetween(
-      0,
-      editor.state.doc.content.size,
-      "\n\n"
-    );
+    const notes = readNotes();
+    if (notes === null) return;
     // Flipped only for a request that will actually be made. askGuide refuses
     // an empty document, and switching the view on the way in would render
     // whichever guide was generated last — so the click would look like it had
     // reopened an old guide rather than like it had been turned down.
     if (notes.trim() !== "") setShowGuide(true);
     void askGuide(notes);
-  }, [editor, askGuide]);
+  }, [readNotes, askGuide]);
+
+  const requestDeck = useCallback(() => {
+    const notes = readNotes();
+    if (notes === null) return;
+    if (notes.trim() !== "") setShowDeck(true);
+    void askDeck(notes);
+  }, [readNotes, askDeck]);
 
   if (showGuide && guide) {
     return (
@@ -126,6 +149,16 @@ function Workspace({
         guide={guide}
         generatedAt={guideRow?.finished_at ?? null}
         onClose={() => setShowGuide(false)}
+      />
+    );
+  }
+
+  if (showDeck && deck) {
+    return (
+      <FlashcardsView
+        deck={deck}
+        generatedAt={deckRow?.finished_at ?? null}
+        onClose={() => setShowDeck(false)}
       />
     );
   }
@@ -141,15 +174,28 @@ function Workspace({
             Open the last guide
           </button>
         )}
+        <button
+          onClick={requestDeck}
+          disabled={!editor || askingDeck || deckRunning}
+        >
+          {deckRunning ? "Writing flashcards…" : "Flashcards"}
+        </button>
+        {deck && !deckRunning && (
+          <button className="link-button" onClick={() => setShowDeck(true)}>
+            Open the last deck
+          </button>
+        )}
         {/* Same reasoning as SourcesPanel's worker warning: the request
             succeeded, so nothing looks broken, and a stopped worker is the
-            most common local-setup mistake. */}
-        {workerSuspect && (
+            most common local-setup mistake. One hint for both queues — they
+            share a worker, so if one is stuck the other is too. */}
+        {(workerSuspect || deckWorkerSuspect) && (
           <span className="muted">
             Still queued — is the agent worker running?
           </span>
         )}
         {guideError && <span className="error">{guideError}</span>}
+        {deckError && <span className="error">{deckError}</span>}
       </div>
 
       <div className="app-layout">
