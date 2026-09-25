@@ -210,3 +210,16 @@ export interface CommentThread {
   root: Comment;
   replies: Comment[];
 }
+
+/** One thing said about the text, with where in the text it was said.
+ *
+ * The annotation margin merges the agent's suggestions and the group's
+ * comment threads into a single stream ordered by `from`, because a margin
+ * holds everything said about a passage regardless of who said it. Computed
+ * in Editor.tsx from the two decoration sets. */
+export interface AnchoredAnnotation {
+  kind: "suggestion" | "comment";
+  id: string;
+  /** ProseMirror document position of the start of the anchored span. */
+  from: number;
+}
