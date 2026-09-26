@@ -52,14 +52,17 @@ export default function DocumentList({
     <nav className="documents-panel" aria-label="Documents">
       <div className="documents-head">
         <h2>Documents</h2>
+        {/* The same small square as a row's "…" trigger: this sits beside a
+            --text-xs heading, where the full-size icon button was the largest
+            thing in the panel. */}
         <button
-          className="icon-button"
+          className="icon-button is-small"
           onClick={onCreate}
           disabled={busy}
           title="Add a document to this space"
           aria-label="Add a document to this space"
         >
-          <IconNew />
+          <IconNew size={12} />
         </button>
       </div>
 
