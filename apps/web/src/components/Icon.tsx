@@ -48,6 +48,7 @@ import {
   Strikethrough,
   Sun,
   Trash2,
+  TriangleAlert,
   Undo2,
   Upload,
   UserPlus,
@@ -119,6 +120,7 @@ export const IconNext = wrap(ChevronRight);
 export const IconRestart = wrap(RotateCcw);
 export const IconAccept = wrap(Check);
 export const IconDismiss = wrap(X);
+export const IconWarn = wrap(TriangleAlert);
 
 /* --- theme --- */
 export const IconThemeLight = wrap(Sun);
