@@ -17,7 +17,7 @@ import StudyGuideView from "../components/StudyGuideView";
 import ThemeToggle from "../components/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
-import { colorFromUserId } from "../lib/avatarColor";
+import { colorFromId } from "../lib/avatarColor";
 import type { PassageAnchor } from "../lib/anchors";
 import { applySuggestion } from "../lib/applySuggestion";
 import { useCollabProvider } from "../lib/useCollabProvider";
@@ -486,7 +486,7 @@ export default function SpacePage({
   const identity = useMemo(
     () =>
       user
-        ? { name: user.name || user.email || "Anonymous", color: colorFromUserId(user.id) }
+        ? { name: user.name || user.email || "Anonymous", color: colorFromId(user.id) }
         : null,
     [user]
   );

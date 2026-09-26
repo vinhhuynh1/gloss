@@ -461,7 +461,7 @@ h3,
    caret is a zero-width unstyled <span> and the name label does not render,
    so the extension looks broken while being wired up correctly. The colours
    are inline styles the extension sets from user.color — see
-   colorFromUserId() in pages/SpacePage.tsx. */
+   colorFromId() in lib/avatarColor.ts. */
 
 .collaboration-cursor__caret {
   position: relative;
@@ -2324,13 +2324,31 @@ summary:focus-visible {
   padding: 0;
 }
 
+/* Cards fill their cell rather than sitting at the top of it. A grid row is
+   as tall as its tallest item, so without this the rename and new-space
+   forms — which are legitimately taller than a card — left every sibling in
+   their row floating above a gap. */
+.space-grid > li {
+  display: flex;
+}
+
+.space-card {
+  flex: 1;
+}
+
+/* The cell exists so the menu can sit over the card without being inside
+   its <button>. */
+.space-cell {
+  position: relative;
+}
+
 .space-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-2);
   width: 100%;
-  min-height: 7.5rem;
+  min-height: 8.5rem;
   padding: var(--space-4);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2338,6 +2356,46 @@ summary:focus-visible {
   color: inherit;
   text-align: left;
   font: inherit;
+}
+
+/* The tile, and the only colour on the card. A grid of cards that differ
+   only in their wording has to be read; one that differs in colour and
+   letter can be found. */
+.space-card-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-2);
+  /* Literal white, like the presence chip and the share avatar: this sits on
+     the space's own hue, which is the same in both themes. */
+  color: #ffffff;
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.space-cell .row-menu-trigger {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.space-cell:hover .row-menu-trigger,
+.space-cell:focus-within .row-menu-trigger {
+  opacity: 1;
+}
+
+/* Rename, and the new-space form, take the shape of the card they replace so
+   the grid does not jump. */
+.space-card.is-editing {
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.space-card.is-editing input {
+  width: 100%;
 }
 
 @media (hover: hover) {
@@ -2376,9 +2434,28 @@ summary:focus-visible {
 .space-card.is-new {
   justify-content: center;
   align-items: center;
+  gap: var(--space-2);
   background: none;
   border-style: dashed;
   color: var(--text-soft);
+}
+
+@media (hover: hover) {
+  .space-card.is-new:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+}
+
+/* --- the filter ---
+   Only rendered past six spaces; below that a search box is furniture over a
+   grid you can already see all of. */
+.space-search {
+  margin-bottom: var(--space-4);
+}
+
+.space-search input {
+  width: min(100%, 20rem);
 }
 
 @media (hover: hover) {
@@ -3092,6 +3169,32 @@ summary:focus-visible {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
+}
+
+/* --- who is signed in ---
+   The address alone, in muted grey next to a sign-out link, read as a label
+   rather than as you. The initial is the one the share sheet gives this
+   account, in the same colour. */
+.header-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.header-email {
+  font-size: var(--text-md);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16rem;
+}
+
+.share-avatar.is-small {
+  width: 1.65rem;
+  height: 1.65rem;
+  font-size: var(--text-xs);
 }
 
 .share-avatar {
