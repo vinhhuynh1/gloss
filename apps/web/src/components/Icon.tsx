@@ -22,9 +22,12 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CloudUpload,
   Layers,
   Code,
   FileText,
+  FileType2,
+  Inbox,
   Heading1,
   Heading2,
   Heading3,
@@ -96,7 +99,12 @@ export const IconCards = wrap(Layers);
 
 /* --- documents and sources --- */
 export const IconDocument = wrap(FileText);
+/* A PDF is the one source kind worth telling apart at a glance: it is the
+   only one nobody can read in the editor. */
+export const IconFilePdf = wrap(FileType2);
 export const IconUpload = wrap(Upload);
+export const IconUploadCloud = wrap(CloudUpload);
+export const IconEmpty = wrap(Inbox);
 export const IconNew = wrap(Plus);
 export const IconRename = wrap(Pencil);
 export const IconDelete = wrap(Trash2);
