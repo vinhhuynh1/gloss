@@ -23,6 +23,13 @@ import { useFlashcards } from "../lib/useFlashcards";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import { documentIdFromRoute, navigate, useHashRoute } from "../lib/useHashRoute";
+import {
+  IconAgent,
+  IconBack,
+  IconCards,
+  IconInvite,
+  IconNext,
+} from "../components/Icon";
 import type {
   AnchoredAnnotation,
   Member,
@@ -30,6 +37,22 @@ import type {
   StudySpace,
   Suggestion,
 } from "../lib/types";
+
+/** How long ago, in the roughest unit that is still true.
+ *
+ * A generated artifact is either "just now" or "some time ago" — nobody needs
+ * the minute it finished, they need to know whether it predates the edits
+ * they have made since. */
+function ago(iso: string | null): string {
+  if (!iso) return "";
+  const then = new Date(iso.endsWith("Z") ? iso : iso + "Z").getTime();
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
 
 /** Stable per-user cursor colour, so a collaborator looks the same each session. */
 function colorFromUserId(id: string): string {
@@ -191,9 +214,24 @@ function Workspace({
         <button onClick={requestGuide} disabled={!editor || asking || guideRunning}>
           {guideRunning ? "Writing study guide…" : "Study guide"}
         </button>
+        {/* Not "Open the last guide". A chip that names the thing and says
+            how old it is answers the question someone actually has — is this
+            still the guide for the notes in front of me, or did I write two
+            more sections since? */}
         {guide && !guideRunning && (
-          <button className="link-button" onClick={() => setShowGuide(true)}>
-            Open the last guide
+          <button
+            className="result-chip is-agent"
+            onClick={() => setShowGuide(true)}
+            title={`Open "${guide.title}"`}
+          >
+            <IconAgent className="result-chip-mark" />
+            <span className="result-chip-text">
+              <span className="result-chip-title">{guide.title}</span>
+              <span className="result-chip-meta">
+                Study guide · {ago(guideRow?.finished_at ?? null)}
+              </span>
+            </span>
+            <IconNext className="result-chip-go" />
           </button>
         )}
         <button
@@ -203,8 +241,20 @@ function Workspace({
           {deckRunning ? "Writing flashcards…" : "Flashcards"}
         </button>
         {deck && !deckRunning && (
-          <button className="link-button" onClick={() => setShowDeck(true)}>
-            Open the last deck
+          <button
+            className="result-chip is-agent"
+            onClick={() => setShowDeck(true)}
+            title={`Open "${deck.title}"`}
+          >
+            <IconCards className="result-chip-mark" />
+            <span className="result-chip-text">
+              <span className="result-chip-title">{deck.title}</span>
+              <span className="result-chip-meta">
+                {deck.cards.length} quiz cards ·{" "}
+                {ago(deckRow?.finished_at ?? null)}
+              </span>
+            </span>
+            <IconNext className="result-chip-go" />
           </button>
         )}
         {/* Same reasoning as SourcesPanel's worker warning: the request
@@ -320,6 +370,10 @@ export default function SpacePage({
   const [documents, setDocuments] = useState<SpaceDocument[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
+  // Inviting is a once-a-term act. It had a permanent 68px bar across the top
+  // of every session, which is a lot of the screen to spend on something
+  // almost nobody is doing right now.
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [docsBusy, setDocsBusy] = useState(false);
@@ -468,8 +522,9 @@ export default function SpacePage({
     return (
       <div className="space-page">
         <header className="app-header">
-          <button className="link-button" onClick={onBack}>
-            ← All spaces
+          <button className="link-button with-icon" onClick={onBack}>
+            <IconBack />
+            All spaces
           </button>
         </header>
         <p className="muted">
@@ -483,10 +538,19 @@ export default function SpacePage({
   return (
     <div className="space-page">
       <header className="app-header">
-        <button className="link-button" onClick={onBack}>
-          ← All spaces
-        </button>
-        <h1>{space?.course_name ?? "…"}</h1>
+        {/* A trail rather than a back link beside a title. "All spaces" on
+            its own says where you would go; a trail says where you are, which
+            is the more useful half and costs the same room. */}
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <button className="crumb is-link" onClick={onBack}>
+            <IconBack className="crumb-back" />
+            All spaces
+          </button>
+          <span className="crumb-sep" aria-hidden="true">
+            /
+          </span>
+          <h1 className="crumb is-current">{space?.course_name ?? "…"}</h1>
+        </nav>
         {/* Two counts that answer different questions, deliberately. This one
             is who belongs to the space (from the API); PresenceBar's is who is
             connected right now (from CRDT awareness). */}
@@ -494,18 +558,33 @@ export default function SpacePage({
           {members.length} member{members.length === 1 ? "" : "s"}
         </span>
         {provider && <PresenceBar provider={provider} status={status} />}
+        <button
+          className="link-button with-icon"
+          aria-expanded={inviteOpen}
+          onClick={() => setInviteOpen((open) => !open)}
+        >
+          <IconInvite />
+          {inviteOpen ? "Close" : "Invite"}
+        </button>
         <ThemeToggle />
       </header>
 
-      <form className="invite-form" onSubmit={invite}>
-        <input
-          type="email"
-          value={inviteEmail}
-          onChange={(e) => setInviteEmail(e.target.value)}
-          placeholder="Invite a classmate by email"
-        />
-        <button type="submit">Invite</button>
-      </form>
+      {inviteOpen && (
+        <form className="invite-form" onSubmit={invite}>
+          <input
+            type="email"
+            value={inviteEmail}
+            autoFocus
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="Classmate's email address"
+          />
+          <button type="submit">Send invite</button>
+          <span className="muted invite-hint">
+            They need an account already — an invite resolves an address to a
+            person rather than sending mail.
+          </span>
+        </form>
+      )}
 
       {error && <p className="error">{error}</p>}
 
@@ -527,7 +606,25 @@ export default function SpacePage({
           onDeleteDocument={(id) => void deleteDocument(id)}
         />
       ) : (
-        <p className="muted">Connecting…</p>
+        // The workspace shape, so the page does not jump when the
+        // document and the socket arrive.
+        <div className="app-layout" aria-busy="true">
+          <div className="left-rail">
+            <div className="documents-panel">
+              <div className="skeleton skeleton-line" style={{ width: "45%" }} />
+              <div className="skeleton skeleton-line" style={{ width: "80%" }} />
+              <div className="skeleton skeleton-line" style={{ width: "65%" }} />
+            </div>
+          </div>
+          <div className="editor-pane">
+            <div className="editor-skeleton">
+              <div className="skeleton skeleton-line" style={{ width: "35%", height: "1.4rem" }} />
+              <div className="skeleton skeleton-line" style={{ width: "92%" }} />
+              <div className="skeleton skeleton-line" style={{ width: "88%" }} />
+              <div className="skeleton skeleton-line" style={{ width: "60%" }} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -12,6 +12,8 @@
 import { useState } from "react";
 
 import type { SpaceDocument } from "../lib/types";
+import RowMenu from "./RowMenu";
+import { IconDelete, IconDocument, IconNew, IconRename } from "./Icon";
 
 export default function DocumentList({
   documents,
@@ -51,12 +53,13 @@ export default function DocumentList({
       <div className="documents-head">
         <h2>Documents</h2>
         <button
-          className="link-button"
+          className="icon-button"
           onClick={onCreate}
           disabled={busy}
           title="Add a document to this space"
+          aria-label="Add a document to this space"
         >
-          + New
+          <IconNew />
         </button>
       </div>
 
@@ -81,34 +84,42 @@ export default function DocumentList({
             );
           }
           return (
-            <li key={doc.id}>
+            <li className="document-row" key={doc.id}>
               <button
                 className={`document-item${current ? " is-current" : ""}`}
                 title={doc.title}
                 onClick={() => onOpen(doc.id)}
                 onDoubleClick={() => startRename(doc)}
               >
-                {doc.title}
+                <IconDocument className="row-icon" />
+                <span className="row-label">{doc.title}</span>
               </button>
-              {current && (
-                <span className="document-item-actions">
-                  <button className="link-button" onClick={() => startRename(doc)}>
-                    Rename
-                  </button>
-                  {/* Only offered when there is another document to fall back
-                      to. The API refuses the last one with a 409; not showing
-                      the button is friendlier than explaining the refusal. */}
-                  {documents.length > 1 && (
-                    <button
-                      className="link-button"
-                      onClick={() => onDelete(doc.id)}
-                      disabled={busy}
-                    >
-                      Delete
-                    </button>
-                  )}
-                </span>
-              )}
+
+              {/* On every row, not only the selected one. Actions that appear
+                  merely because a row happens to be open are hard to find and
+                  inconsistent between rows, which is why these used to sit in
+                  a strip underneath. */}
+              <RowMenu
+                label={`Actions for ${doc.title}`}
+                items={[
+                  {
+                    label: "Rename",
+                    icon: <IconRename size={14} />,
+                    onSelect: () => startRename(doc),
+                  },
+                  {
+                    label: "Delete",
+                    icon: <IconDelete size={14} />,
+                    destructive: true,
+                    // The API refuses the last document in a space with a 409.
+                    // Disabling with a reason beats hiding: a control that
+                    // vanishes looks like a bug, one that explains itself does
+                    // not.
+                    disabled: documents.length <= 1 || busy,
+                    onSelect: () => onDelete(doc.id),
+                  },
+                ]}
+              />
             </li>
           );
         })}
