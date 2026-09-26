@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Deck } from "../lib/types";
+import { IconNext, IconPrev, IconRestart } from "./Icon";
 
 type Mode = "review" | "quiz";
 
@@ -157,7 +158,10 @@ export default function FlashcardsView({
               : `${cards.length - score} to go back over.`}
           </p>
           <div className="flashcards-score-actions">
-            <button onClick={() => restart("quiz")}>Run it again</button>
+            <button onClick={() => restart("quiz")}>
+              <IconRestart />
+              Run it again
+            </button>
             <button className="link-button" onClick={() => restart("review")}>
               Review the deck
             </button>
@@ -198,7 +202,8 @@ export default function FlashcardsView({
               onClick={() => go(-1)}
               disabled={index === 0}
             >
-              ← Previous
+              <IconPrev />
+              Previous
             </button>
 
             <span className="muted flashcards-position">
@@ -221,7 +226,8 @@ export default function FlashcardsView({
                 onClick={() => go(1)}
                 disabled={index === cards.length - 1}
               >
-                Next →
+                Next
+                <IconNext />
               </button>
             )}
           </div>
