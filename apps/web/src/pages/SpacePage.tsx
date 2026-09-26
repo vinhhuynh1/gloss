@@ -5,16 +5,19 @@ import type * as Y from "yjs";
 
 import AnnotationMargin from "../components/AnnotationMargin";
 import CommentComposer from "../components/CommentComposer";
+import ConfirmDialog from "../components/ConfirmDialog";
 import DocumentList from "../components/DocumentList";
 import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
 import FlashcardsView from "../components/FlashcardsView";
 import PresenceBar from "../components/PresenceBar";
+import ShareDialog from "../components/ShareDialog";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
 import ThemeToggle from "../components/ThemeToggle";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiFetch } from "../lib/api";
+import { colorFromUserId } from "../lib/avatarColor";
 import type { PassageAnchor } from "../lib/anchors";
 import { applySuggestion } from "../lib/applySuggestion";
 import { useCollabProvider } from "../lib/useCollabProvider";
@@ -52,13 +55,6 @@ function ago(iso: string | null): string {
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
-}
-
-/** Stable per-user cursor colour, so a collaborator looks the same each session. */
-function colorFromUserId(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  return `hsl(${Math.abs(hash) % 360}, 70%, 55%)`;
 }
 
 /**
@@ -368,8 +364,9 @@ export default function SpacePage({
   const { user, session } = useAuth();
   const [space, setSpace] = useState<StudySpace | null>(null);
   const [documents, setDocuments] = useState<SpaceDocument[]>([]);
+  /** The document the delete dialog is asking about, if it is open. */
+  const [pendingDelete, setPendingDelete] = useState<SpaceDocument | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
-  const [inviteEmail, setInviteEmail] = useState("");
   // Inviting is a once-a-term act. It had a permanent 68px bar across the top
   // of every session, which is a lot of the screen to spend on something
   // almost nobody is doing right now.
@@ -458,34 +455,33 @@ export default function SpacePage({
     }
   }, []);
 
+  // Asking and doing are separate now that the question is a rendered
+  // dialog rather than a blocking call: the menu item opens it, and the
+  // dialog's own button is what runs the delete.
   const deleteDocument = useCallback(
-    async (id: string) => {
-      // Everything anchored to the document goes with it — suggestions,
-      // comments, guides, decks — so this asks first. The API also refuses
-      // the last document in a space with a 409.
+    (id: string) => {
       const target = documents.find((d) => d.id === id);
-      if (
-        !window.confirm(
-          `Delete “${target?.title ?? "this document"}”? Its notes, comments ` +
-            `and generated guides go with it. This cannot be undone.`
-        )
-      ) {
-        return;
-      }
-      setDocsBusy(true);
-      try {
-        await apiFetch<void>(`/documents/${id}`, { method: "DELETE" });
-        const left = documents.filter((d) => d.id !== id);
-        setDocuments(left);
-        if (doc?.id === id && left[0]) openDocument(left[0].id);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not delete");
-      } finally {
-        setDocsBusy(false);
-      }
+      if (target) setPendingDelete(target);
     },
-    [documents, doc, openDocument]
+    [documents]
   );
+
+  const confirmDelete = useCallback(async () => {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target) return;
+    setDocsBusy(true);
+    try {
+      await apiFetch<void>(`/documents/${target.id}`, { method: "DELETE" });
+      const left = documents.filter((d) => d.id !== target.id);
+      setDocuments(left);
+      if (doc?.id === target.id && left[0]) openDocument(left[0].id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete");
+    } finally {
+      setDocsBusy(false);
+    }
+  }, [pendingDelete, documents, doc, openDocument]);
 
   const identity = useMemo(
     () =>
@@ -500,22 +496,14 @@ export default function SpacePage({
     session?.access_token
   );
 
-  async function invite(e: React.FormEvent) {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    try {
-      const member = await apiFetch<Member>(`/study-spaces/${spaceId}/members`, {
-        method: "POST",
-        body: JSON.stringify({ email: inviteEmail.trim() }),
-      });
-      setInviteEmail("");
-      setMembers((prev) =>
-        prev.some((m) => m.user_id === member.user_id) ? prev : [...prev, member]
-      );
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invite failed");
-    }
+  async function invite(email: string) {
+    const member = await apiFetch<Member>(`/study-spaces/${spaceId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    setMembers((prev) =>
+      prev.some((m) => m.user_id === member.user_id) ? prev : [...prev, member]
+    );
   }
 
   if (denied) {
@@ -560,30 +548,36 @@ export default function SpacePage({
         {provider && <PresenceBar provider={provider} status={status} />}
         <button
           className="link-button with-icon"
-          aria-expanded={inviteOpen}
-          onClick={() => setInviteOpen((open) => !open)}
+          aria-haspopup="dialog"
+          onClick={() => setInviteOpen(true)}
         >
           <IconInvite />
-          {inviteOpen ? "Close" : "Invite"}
+          Share
         </button>
         <ThemeToggle />
       </header>
 
       {inviteOpen && (
-        <form className="invite-form" onSubmit={invite}>
-          <input
-            type="email"
-            value={inviteEmail}
-            autoFocus
-            onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="Classmate's email address"
-          />
-          <button type="submit">Send invite</button>
-          <span className="muted invite-hint">
-            They need an account already — an invite resolves an address to a
-            person rather than sending mail.
-          </span>
-        </form>
+        <ShareDialog
+          spaceName={space?.course_name ?? "this space"}
+          members={members}
+          currentUserId={user?.id}
+          onInvite={invite}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
+
+      {/* Everything anchored to the document goes with it — suggestions,
+          comments, guides, decks — and the API refuses the last document in a
+          space with a 409, so the rail disables the item in that case. */}
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete “${pendingDelete.title}”?`}
+          body="Its notes, comments, suggestions and generated guides go with it. This cannot be undone."
+          confirmLabel="Delete document"
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
 
       {error && <p className="error">{error}</p>}

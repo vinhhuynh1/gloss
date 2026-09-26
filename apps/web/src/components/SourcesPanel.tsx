@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import type { Source } from "../lib/types";
+import ConfirmDialog from "./ConfirmDialog";
 import RowMenu from "./RowMenu";
 import {
   IconDelete,
@@ -66,6 +67,8 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  /** The source the remove dialog is asking about, if it is open. */
+  const [pendingRemove, setPendingRemove] = useState<Source | null>(null);
   // Counted rather than a boolean: dragenter/dragleave also fire as the
   // pointer crosses the zone's own children, so a plain flag flickers off the
   // moment the cursor passes over the icon.
@@ -152,13 +155,10 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
     }
   }
 
-  async function remove(id: string, filename: string) {
-    // Deleting a source deletes its chunks, so the agent silently loses the
-    // ability to cite it. Cheap confirm for an action nothing can undo.
-    if (!window.confirm(`Remove ${filename} and everything indexed from it?`)) return;
+  async function remove(source: Source) {
     try {
-      await apiFetch(`/sources/${id}`, { method: "DELETE" });
-      setSources((prev) => prev.filter((s) => s.id !== id));
+      await apiFetch(`/sources/${source.id}`, { method: "DELETE" });
+      setSources((prev) => prev.filter((s) => s.id !== source.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     }
@@ -246,6 +246,22 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
         </div>
       )}
 
+      {/* Removing a source removes its chunks, so the agent silently loses
+          the ability to cite it — nothing in the notes changes to say so. */}
+      {pendingRemove && (
+        <ConfirmDialog
+          title={`Remove ${pendingRemove.filename}?`}
+          body="Everything indexed from it goes too, and the agent can no longer cite it. This cannot be undone."
+          confirmLabel="Remove source"
+          onConfirm={() => {
+            const target = pendingRemove;
+            setPendingRemove(null);
+            void remove(target);
+          }}
+          onCancel={() => setPendingRemove(null)}
+        />
+      )}
+
       <ul className="source-list">
         {sources.map((s) => {
           const isPdf = s.filename.toLowerCase().endsWith(".pdf");
@@ -283,7 +299,7 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
                       label: "Remove",
                       icon: <IconDelete size={14} />,
                       destructive: true,
-                      onSelect: () => void remove(s.id, s.filename),
+                      onSelect: () => setPendingRemove(s),
                     },
                   ]}
                 />
