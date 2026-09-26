@@ -16,7 +16,7 @@
 import { useId, useRef, useState } from "react";
 
 import type { Member } from "../lib/types";
-import { colorFromUserId } from "../lib/avatarColor";
+import { colorFromId } from "../lib/avatarColor";
 import Modal from "./Modal";
 import { IconDismiss, IconInvite } from "./Icon";
 
@@ -135,7 +135,7 @@ export default function ShareDialog({
             <li className="share-person" key={m.user_id}>
               <span
                 className="share-avatar"
-                style={{ backgroundColor: colorFromUserId(m.user_id) }}
+                style={{ backgroundColor: colorFromId(m.user_id) }}
                 aria-hidden="true"
               >
                 {(m.name || m.email).slice(0, 1).toUpperCase()}
