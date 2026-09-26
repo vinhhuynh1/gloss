@@ -2172,7 +2172,10 @@ summary:focus-visible {
    browsers, so every control holding one is a flex row instead. */
 
 .icon-button,
-.link-button.with-icon,
+/* Standalone, not .link-button.with-icon: it was only ever a modifier of that
+   one class, so any other button wearing it got the class name and none of the
+   layout — the icon and the label sat flush against each other. */
+.with-icon,
 .toolbar-button,
 .annotation-actions button,
 .flashcards-controls button,
