@@ -22,6 +22,7 @@ import {
 } from "../extensions/SuggestionHighlights";
 import { type PassageAnchor, selectionToAnchor } from "../lib/anchors";
 import type { AnchoredAnnotation, CommentThread, Suggestion } from "../lib/types";
+import { IconAgent, IconComment } from "./Icon";
 
 interface EditorProps {
   ydoc: Y.Doc;
@@ -193,14 +194,16 @@ export default function Editor({
             onClick={() => fromSelection(askRef.current)}
             title="Check this passage against the course material (Ctrl+Alt+M)"
           >
-            ✨ Check with AI
+            <IconAgent />
+            Check with AI
           </button>
           <button
             className="comment-button"
             onClick={() => fromSelection(commentRef.current)}
             title="Comment on this passage"
           >
-            💬 Comment
+            <IconComment />
+            Comment
           </button>
         </BubbleMenu>
       )}

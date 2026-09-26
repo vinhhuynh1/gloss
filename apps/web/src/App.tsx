@@ -9,7 +9,10 @@ export default function App() {
   const route = useHashRoute();
   const spaceId = spaceIdFromRoute(route);
 
-  if (loading) return <p className="muted centered">Loading…</p>;
+  // Nothing is known yet - not even whether there is a session - so this is
+  // deliberately a blank hold rather than a skeleton of a screen that may
+  // turn out to be the login form instead.
+  if (loading) return <div className="boot-hold" aria-busy="true" />;
 
   // The hash survives the login screen, so a signed-out user opening a shared
   // link lands on that space straight after signing in — the whole "send a

@@ -25,6 +25,7 @@ import type {
   Suggestion,
 } from "../lib/types";
 import { type TrackedRequest, WORKER_SUSPECT_MS } from "../lib/useSuggestions";
+import { IconAccept, IconAgent, IconComment } from "./Icon";
 
 const TYPE_LABELS: Record<Suggestion["type"], string> = {
   citation: "Citation",
@@ -273,11 +274,15 @@ export default function AnnotationMargin({
       ))}
 
       {shown.length === 0 && requests.length === 0 && (
-        <p className="muted margin-empty">
-          Select a passage to check it against your sources, or to ask your
-          group about it. Whatever anyone says about the notes shows up here,
-          in the order it appears in the text.
-        </p>
+        <div className="empty-state margin-empty">
+          <IconComment size={24} />
+          <p className="empty-state-title">Nothing on the notes yet</p>
+          <p>
+            Select a passage to check it against your sources, or to ask your
+            group about it. Whatever anyone says shows up here, in the order it
+            appears in the text.
+          </p>
+        </div>
       )}
 
       {resolved.length > 0 && (
@@ -315,6 +320,7 @@ export default function AnnotationMargin({
                   onMouseEnter={() => onFocus(s.id)}
                 >
                   <div className="annotation-head">
+                    <IconAgent className="annotation-mark" />
                     <span className="annotation-index">{index}</span>
                     <span className="annotation-kind">{TYPE_LABELS[s.type]}</span>
                   </div>
@@ -339,7 +345,10 @@ export default function AnnotationMargin({
                   <div className="annotation-actions">
                     {!detached ? (
                       <>
-                        <button onClick={() => onAccept(s)}>Accept</button>
+                        <button onClick={() => onAccept(s)}>
+                          <IconAccept size={14} />
+                          Accept
+                        </button>
                         <button className="ghost" onClick={() => onReject(s)}>
                           Reject
                         </button>
@@ -370,6 +379,7 @@ export default function AnnotationMargin({
                 onClick={() => onFocus(thread.root.id)}
               >
                 <div className="annotation-head">
+                  <IconComment className="annotation-mark" />
                   <span className="annotation-index">{index}</span>
                   <span className="annotation-kind">
                     {isResolved ? "Resolved" : "Thread"}
