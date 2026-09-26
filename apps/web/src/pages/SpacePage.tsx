@@ -4,6 +4,7 @@ import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
 import AnnotationMargin from "../components/AnnotationMargin";
+import ChatDock from "../components/ChatDock";
 import CommentComposer from "../components/CommentComposer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DocumentList from "../components/DocumentList";
@@ -20,6 +21,7 @@ import { ApiError, apiFetch } from "../lib/api";
 import { colorFromId } from "../lib/avatarColor";
 import type { PassageAnchor } from "../lib/anchors";
 import { applySuggestion } from "../lib/applySuggestion";
+import { insertNotes } from "../lib/notesToDoc";
 import { useCollabProvider } from "../lib/useCollabProvider";
 import { useComments } from "../lib/useComments";
 import { useFlashcards } from "../lib/useFlashcards";
@@ -35,6 +37,7 @@ import {
 } from "../components/Icon";
 import type {
   AnchoredAnnotation,
+  ChatMessage,
   Member,
   SpaceDocument,
   StudySpace,
@@ -76,6 +79,7 @@ function Workspace({
   onCreateDocument,
   onRenameDocument,
   onDeleteDocument,
+  onEditor,
 }: {
   spaceId: string;
   documentId: string;
@@ -93,8 +97,18 @@ function Workspace({
   onCreateDocument: () => void;
   onRenameDocument: (id: string, title: string) => void;
   onDeleteDocument: (id: string) => void;
+  /** Reported up as well as kept here: the space chat lives outside this
+   * component and inserts generated notes into whichever document is open. */
+  onEditor: (editor: TiptapEditor | null) => void;
 }) {
-  const [editor, setEditor] = useState<TiptapEditor | null>(null);
+  const [editor, setEditorHere] = useState<TiptapEditor | null>(null);
+  const setEditor = useCallback(
+    (e: TiptapEditor | null) => {
+      setEditorHere(e);
+      onEditor(e);
+    },
+    [onEditor]
+  );
   // Suggestions and threads together, in document order — see AnnotationMargin.
   const [annotations, setAnnotations] = useState<AnchoredAnnotation[]>([]);
   // One focus for both kinds: they share a column, so only one card can be
@@ -416,6 +430,44 @@ export default function SpacePage({
     return documents.find((d) => d.id === routeDocumentId) ?? documents[0];
   }, [documents, routeDocumentId]);
 
+  // The open document's editor, for the space chat: it reads the notes so
+  // generated notes can skip what is already written, and inserts into them.
+  // Kept with the id of the document it belongs to, captured when the editor
+  // reports itself, rather than read from the route: on a document switch the
+  // route moves on a render before the old editor is released, and notes
+  // inserting themselves in that gap would land in the wrong document.
+  const [openEditorFor, setOpenEditorFor] = useState<{
+    editor: TiptapEditor;
+    documentId: string;
+  } | null>(null);
+  const openEditor = openEditorFor?.editor ?? null;
+  const docId = doc?.id;
+  // Workspace is keyed by document, so each one holds the callback made for
+  // its own document id. An editor going away clears the slot only if the
+  // slot is still its own: the next document's editor may have taken it.
+  const reportEditor = useCallback(
+    (e: TiptapEditor | null) =>
+      setOpenEditorFor((prev) => {
+        if (e && docId) return { editor: e, documentId: docId };
+        return prev?.documentId === docId ? null : prev;
+      }),
+    [docId]
+  );
+
+  // Same serialization as Workspace.readNotes, for the same reason.
+  const readOpenNotes = useCallback(() => {
+    if (!openEditor) return null;
+    return openEditor.state.doc.textBetween(0, openEditor.state.doc.content.size, "\n\n");
+  }, [openEditor]);
+
+  const insertIntoOpenDocument = useCallback(
+    (m: ChatMessage) => {
+      if (!openEditor) return "Open a document to add these notes to it.";
+      return insertNotes(openEditor, m.body, m.citations ?? []);
+    },
+    [openEditor]
+  );
+
   const openDocument = useCallback(
     (id: string) => navigate(`/spaces/${spaceId}/docs/${id}`),
     [spaceId]
@@ -598,6 +650,7 @@ export default function SpacePage({
           onCreateDocument={() => void createDocument()}
           onRenameDocument={(id, title) => void renameDocument(id, title)}
           onDeleteDocument={(id) => void deleteDocument(id)}
+          onEditor={reportEditor}
         />
       ) : (
         // The workspace shape, so the page does not jump when the
@@ -619,6 +672,20 @@ export default function SpacePage({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Here rather than inside Workspace: the chat belongs to the space,
+          and Workspace remounts on every document switch. Waits for the
+          space so a non-member never gets a chat bar that can only 403. */}
+      {space && (
+        <ChatDock
+          spaceId={spaceId}
+          currentUserId={user?.id}
+          canInsert={openEditor !== null}
+          openDocumentId={openEditorFor?.documentId ?? null}
+          readNotes={readOpenNotes}
+          onInsertNotes={insertIntoOpenDocument}
+        />
       )}
     </div>
   );

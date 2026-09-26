@@ -31,6 +31,7 @@ ALTER TABLE public.study_guides        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comments            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comment_mentions    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.flashcard_sets      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages       ENABLE ROW LEVEL SECURITY;
 
 -- Verify with:
 --   curl "https://<ref>.supabase.co/rest/v1/users?select=*" -H "apikey: <anon key>"

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pypdf import PdfReader
 
 from embeddings import embed_batch
@@ -34,6 +36,9 @@ DATABASE_URL = os.getenv(
 CHUNK_SIZE_CHARS = 1200
 CHUNK_OVERLAP_CHARS = 200
 
+# Must match ALLOWED_EXTENSIONS[".pptx"] in apps/api/routers/sources.py.
+PPTX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
 # (page_ref, text). page_ref is None when the format carries no locator to
 # cite — a heading-less .txt file — and a citation on such a chunk names the
 # file but no position within it.
@@ -46,6 +51,66 @@ def extract_pages_from_pdf(data: bytes) -> list[Page]:
     return [
         (f"p. {i + 1}", page.extract_text() or "") for i, page in enumerate(reader.pages)
     ]
+
+
+def _shape_texts(shapes) -> list[str]:
+    """Text of every shape on a slide, in reading order.
+
+    Shapes are stored in z-order, which is whatever order the author happened
+    to add them in, so they are sorted top-to-bottom, left-to-right instead.
+    Group shapes are walked into rather than skipped — a diagram built from
+    grouped text boxes is still lecture content.
+    """
+    ordered = sorted(shapes, key=lambda s: ((s.top or 0), (s.left or 0)))
+    texts: list[str] = []
+    for shape in ordered:
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            texts.extend(_shape_texts(shape.shapes))
+        elif shape.has_text_frame:
+            # Indent by bullet level so the nesting survives into the chunk:
+            # a sub-point reads as belonging to the point above it.
+            lines = [
+                "  " * p.level + "".join(r.text for r in p.runs).strip()
+                for p in shape.text_frame.paragraphs
+            ]
+            text = "\n".join(line for line in lines if line.strip())
+            if text:
+                texts.append(text)
+        elif shape.has_table:
+            rows = [
+                " | ".join(cell.text.strip() for cell in row.cells)
+                for row in shape.table.rows
+            ]
+            texts.append("\n".join(r for r in rows if r.strip(" |")))
+    return texts
+
+
+def extract_pages_from_pptx(data: bytes) -> list[Page]:
+    """One (page_ref, text) pair per slide.
+
+    The slide title leads the text on its own line, so it stays attached to
+    the content it heads — both for retrieval and for building notes that
+    follow the lecture's structure. Speaker notes are kept too: lecturers
+    often put the actual explanation there and only keywords on the slide.
+    """
+    deck = Presentation(io.BytesIO(data))
+    pages: list[Page] = []
+    for i, slide in enumerate(deck.slides, start=1):
+        title_shape = slide.shapes.title
+        title = title_shape.text_frame.text.strip() if title_shape is not None else ""
+        # Compared by id, not identity: python-pptx builds a fresh proxy
+        # object on every access, so `is not title_shape` never matches.
+        title_id = title_shape.shape_id if title_shape is not None else None
+        body = _shape_texts(s for s in slide.shapes if s.shape_id != title_id)
+
+        parts = [title] if title else []
+        parts.extend(body)
+        if slide.has_notes_slide:
+            notes = slide.notes_slide.notes_text_frame
+            if notes is not None and notes.text.strip():
+                parts.append(f"Speaker notes: {notes.text.strip()}")
+        pages.append((f"slide {i}", "\n".join(parts)))
+    return pages
 
 
 def split_markdown_sections(text: str) -> list[Page]:
@@ -90,6 +155,8 @@ def extract_pages(filename: str, content_type: str | None, data: bytes) -> list[
     lowered = filename.lower()
     if lowered.endswith(".pdf") or content_type == "application/pdf":
         return extract_pages_from_pdf(data)
+    if lowered.endswith(".pptx") or content_type == PPTX_CONTENT_TYPE:
+        return extract_pages_from_pptx(data)
     return extract_pages_from_text(data.decode("utf-8", errors="replace"))
 
 

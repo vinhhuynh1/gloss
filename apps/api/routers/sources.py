@@ -44,6 +44,9 @@ ALLOWED_EXTENSIONS = {
     ".md": "text/markdown",
     ".markdown": "text/markdown",
     ".txt": "text/plain",
+    # .pptx only. Legacy binary .ppt has no maintained Python parser; saving
+    # it as .pptx from PowerPoint or Google Slides is the way in.
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 
