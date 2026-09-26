@@ -145,7 +145,7 @@ export default function SpaceListPage({
   return (
     <div className="space-list-page">
       <header className="app-header">
-        <h1>Study spaces</h1>
+        <h1>Gloss</h1>
         {!loading && spaces.length > 0 && (
           <span className="muted header-count">
             {spaces.length} space{spaces.length === 1 ? "" : "s"}

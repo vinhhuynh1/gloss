@@ -2351,7 +2351,7 @@ summary:focus-visible {
   min-height: 8.5rem;
   padding: var(--space-4);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-2);
   color: inherit;
   text-align: left;
@@ -2400,8 +2400,9 @@ summary:focus-visible {
 
 @media (hover: hover) {
   .space-card:hover {
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow);
+    border-color: var(--text-muted);
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-1px);
   }
 }
 
