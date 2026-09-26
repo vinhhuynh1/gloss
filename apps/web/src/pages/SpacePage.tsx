@@ -552,7 +552,7 @@ export default function SpacePage({
           onClick={() => setInviteOpen(true)}
         >
           <IconInvite />
-          Share
+          Invite
         </button>
         <ThemeToggle />
       </header>

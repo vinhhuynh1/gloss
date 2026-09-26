@@ -81,7 +81,7 @@ export default function ShareDialog({
     >
       <div className="share-head">
         <h2 className="share-title" id={titleId}>
-          Share “{spaceName}”
+          Invite to “{spaceName}”
         </h2>
         <button
           type="button"
