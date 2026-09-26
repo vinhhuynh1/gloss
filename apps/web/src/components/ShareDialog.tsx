@@ -50,6 +50,7 @@ export default function ShareDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const hintId = useId();
+  const inputId = useId();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,19 +96,29 @@ export default function ShareDialog({
 
       <form className="share-invite" onSubmit={submit}>
         <div className="share-field">
-          <input
-            ref={inputRef}
-            type="email"
-            value={email}
-            disabled={busy}
-            aria-describedby={hintId}
-            aria-invalid={error ? true : undefined}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (error) setError(null);
-            }}
-            placeholder="Classmate's email address"
-          />
+          {/* An outlined field with a floating label: the label rests inside
+              the box like a placeholder and lifts into a notch in the border
+              on focus or once there is text. Unlike a placeholder it never
+              disappears, so the field still says what it is for after
+              someone starts typing. The placeholder is a single space only so
+              CSS can tell empty from filled with :placeholder-shown. */}
+          <div className="share-outlined">
+            <input
+              ref={inputRef}
+              id={inputId}
+              type="email"
+              value={email}
+              disabled={busy}
+              aria-describedby={hintId}
+              aria-invalid={error ? true : undefined}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder=" "
+            />
+            <label htmlFor={inputId}>Classmate's email address</label>
+          </div>
           <button type="submit" className="with-icon" disabled={busy || !email.trim()}>
             <IconInvite size={14} />
             {busy ? "Adding…" : "Add"}

@@ -835,6 +835,7 @@ summary:focus-visible {
 }
 
 .presence-chips {
+  cursor: pointer;
   display: flex;
 }
 
@@ -3110,12 +3111,102 @@ summary:focus-visible {
 
 .share-field {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+  /* Room above the box for the label once it has floated into the border. */
+  padding-top: var(--space-1);
 }
 
-.share-field input {
+.share-field > button {
+  height: 2.75rem;
+}
+
+/* The outlined field. The label is the resting placeholder and the floating
+   caption both: positioned over the input, then moved into the top border
+   when the field has focus or text. Its background is the card's surface,
+   which is what cuts the notch out of the border behind it. */
+.share-outlined {
+  position: relative;
   flex: 1;
   min-width: 0;
+}
+
+.share-outlined input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2);
+  background: transparent;
+  font-size: var(--text-md);
+  transition: border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.share-outlined input:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+/* A second pixel of border drawn inside, not a wider border: widening it
+   would nudge the text and the label by a pixel on every focus. Replaces the
+   global accent ring, which would draw a second box around the first. */
+.share-outlined input:focus,
+.share-outlined input:focus-visible {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+
+.share-outlined label {
+  position: absolute;
+  left: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: calc(100% - 1.25rem);
+  padding: 0 0.25rem;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  transition: top var(--dur) var(--ease), font-size var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.share-outlined input:focus + label,
+.share-outlined input:not(:placeholder-shown) + label {
+  top: 0;
+  font-size: var(--text-xs);
+}
+
+.share-outlined input:focus + label {
+  color: var(--text);
+}
+
+.share-outlined input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.share-outlined input[aria-invalid="true"]:focus {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.share-outlined input[aria-invalid="true"] + label {
+  color: var(--danger-text);
+}
+
+.share-outlined input:disabled {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-outlined label {
+    transition: none;
+  }
 }
 
 .share-hint,
@@ -3503,4 +3594,628 @@ summary:focus-visible {
 
 .row-menu-item svg {
   flex-shrink: 0;
+}
+
+/* --- space chat ---
+   A bar docked to the bottom of the page, with the thread opening above it.
+   Fixed rather than in the layout: it belongs to the space, not to any one
+   column, and the three columns below it keep their own scroll. The panes it
+   floats over get bottom padding so their last line can scroll clear of it. */
+.editor-pane,
+.left-rail,
+.annotation-margin {
+  padding-bottom: 5.5rem;
+}
+
+.chat-dock {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  /* Below modals (30+) and the comment composer, above sticky toolbars. */
+  z-index: 25;
+  width: min(720px, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-lift);
+}
+
+.chat-bar:focus-within {
+  border-color: var(--accent-border);
+}
+
+.chat-bar-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.chat-attach {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+}
+
+/* Files dragged over the dock. Covers the bar rather than resizing it, so
+   the drop target does not move out from under the pointer. */
+.chat-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: inherit;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.chat-dock.is-dragging .chat-bar {
+  border-color: var(--accent);
+}
+
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) 0;
+}
+
+.chat-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 16rem;
+  padding: 0.2rem 0.2rem 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface-sunken);
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+}
+
+.chat-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attachment-state {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.chat-attachment.is-uploading {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-attachment.is-failed {
+  border-color: var(--danger);
+  background: var(--danger-tint-soft);
+}
+
+.chat-attachment.is-failed .chat-attachment-state {
+  color: var(--danger-text);
+}
+
+/* The one-click action a dropped file offers. Accent, not ink: it is the
+   agent's action, and it should read as a suggestion next to the files
+   rather than as the bar's primary button, which is Send. */
+.chat-make-notes {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.chat-make-notes:hover:not(:disabled) {
+  background: var(--accent-tint-hover);
+}
+
+.chat-drop-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+/* One line is exactly the height of the 2rem buttons beside it (0.375rem of
+   padding either side of a 1.25rem line), so with the row bottom-aligned the
+   placeholder, the paperclip and Send share a centre line; extra lines grow
+   upwards and the buttons stay on the last one. border-box because the
+   auto-grow in ChatDock sets height from scrollHeight, which already includes
+   the padding — content-box counted it twice and left an empty bar 53px tall
+   with its text riding high. */
+.chat-bar textarea {
+  flex: 1;
+  box-sizing: border-box;
+  min-height: 2rem;
+  max-height: 9rem;
+  margin: 0;
+  padding: 0.375rem 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1.25rem;
+  resize: none;
+  overflow-y: auto;
+}
+
+/* The bar's own border carries focus; a ring on the textarea inside it would
+   draw a second box within the first. */
+.chat-bar textarea:focus-visible {
+  box-shadow: none;
+}
+
+.chat-send {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 560px);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+  animation: modal-rise var(--dur) var(--ease);
+}
+
+.chat-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-panel-mark {
+  color: var(--accent);
+}
+
+.chat-panel-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+
+.chat-panel-sub {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.chat-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.chat-earlier {
+  align-self: center;
+}
+
+.chat-empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--text-soft);
+}
+
+.chat-empty p {
+  margin: 0 0 var(--space-1);
+}
+
+.chat-message.is-user {
+  align-self: flex-end;
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.chat-author {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.chat-question {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--human-tint);
+  color: var(--text);
+  border-radius: var(--radius-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-message.is-assistant {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.chat-message-mark {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.chat-message-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-body {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.chat-body p,
+.chat-body ul {
+  margin: 0 0 var(--space-2);
+}
+
+.chat-body > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-body ul {
+  padding-left: 1.25rem;
+}
+
+.chat-body li.is-l1 {
+  margin-left: 1.1rem;
+}
+
+.chat-body li.is-l2 {
+  margin-left: 2.2rem;
+}
+
+.chat-body li.is-l3 {
+  margin-left: 3.3rem;
+}
+
+.chat-body .chat-h2,
+.chat-body .chat-h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chat-body .chat-h2 {
+  font-size: var(--text-md);
+}
+
+.chat-body .chat-h3 {
+  font-size: var(--text-base);
+}
+
+.chat-body > .chat-h2:first-child,
+.chat-body > .chat-h3:first-child {
+  margin-top: 0;
+}
+
+/* Notes are a draft of a document, so they read as one: set apart from the
+   conversation around them on a sunken sheet. */
+.chat-body.is-notes {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface-sunken);
+}
+
+.chat-notes-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.chat-notes-actions .error {
+  margin: 0;
+}
+
+.chat-notes-done {
+  font-size: var(--text-sm);
+  color: var(--ok-text);
+}
+
+/* A caret at the end of an answer that is still arriving. */
+.chat-body.is-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: var(--accent);
+  animation: skeleton-pulse 1s ease-in-out infinite;
+}
+
+.chat-thinking {
+  margin: 0;
+  color: var(--text-muted);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  margin: 0 1px;
+  padding: 0 0.25rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.1em;
+}
+
+.chat-cite:hover {
+  background: var(--accent-tint-hover);
+}
+
+.chat-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.chat-source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 0.15rem 0.5rem 0.15rem 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+}
+
+.chat-source:hover,
+.chat-source.is-open {
+  border-color: var(--accent-border);
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+.chat-source-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--accent-tint);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.chat-source-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-excerpt {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--accent-border);
+  background: var(--surface-sunken);
+  border-radius: 0 var(--radius-1) var(--radius-1) 0;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.chat-excerpt-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.chat-failed .error {
+  margin: 0 0 var(--space-1);
+}
+
+.chat-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel,
+  .chat-thinking,
+  .chat-attachment.is-uploading,
+  .chat-body.is-streaming > :last-child::after {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .chat-dock {
+    bottom: var(--space-2);
+  }
+
+  .chat-panel {
+    max-height: 70vh;
+  }
+}
+
+/* Plan first / Auto, beside "Make notes". A segmented control rather than a
+   checkbox because both choices are named things a person picks between,
+   and the one not chosen should stay readable. */
+.chat-mode {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-sunken);
+}
+
+.chat-mode button {
+  padding: 0.2rem 0.65rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.chat-mode button:hover:not(.is-on) {
+  color: var(--text);
+}
+
+.chat-mode button.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+/* A plan: the proposed sections, each kept or dropped, renamed, reordered. */
+.chat-plan {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.chat-plan.is-approved {
+  border-color: var(--border);
+  background: var(--surface-sunken);
+}
+
+.chat-plan-lead {
+  margin: 0 0 var(--space-2);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.chat-plan-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-plan-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.chat-plan-list input[type="checkbox"] {
+  margin-top: 0.45rem;
+  accent-color: var(--accent);
+}
+
+.chat-plan-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Reads as text until it is clicked into: renaming is available, not asked
+   for. */
+.chat-plan-heading {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.15rem 0.35rem;
+  margin-left: -0.35rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: transparent;
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.chat-plan-heading:hover:not(:disabled) {
+  border-color: var(--border);
+}
+
+.chat-plan-heading:focus {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.chat-plan-heading:disabled {
+  color: var(--text);
+  background: transparent;
+  border-color: transparent;
+}
+
+.chat-plan-summary {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.chat-plan-list li.is-dropped .chat-plan-heading,
+.chat-plan-list li.is-dropped .chat-plan-summary {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.chat-plan-move {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.chat-plan .chat-notes-actions .muted {
+  font-size: var(--text-sm);
 }

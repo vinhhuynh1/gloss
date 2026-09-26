@@ -34,7 +34,9 @@ import psycopg
 from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
 
+import chat
 import flashcards
+import make_notes
 import study_guide
 from agent import check_passage, cited_chunk
 from embeddings import embed_batch
@@ -70,6 +72,18 @@ MAX_ERROR_CHARS = 500
 # model call, seconds rather than minutes, and a person is waiting on it. A
 # claim this old belongs to a worker that died.
 AGENT_STALE_CLAIM_SECONDS = int(os.getenv("AGENT_STALE_CLAIM_SECONDS", "120"))
+
+# A chat answer renews its claim every time it writes streamed text, so this
+# measures silence rather than total length: a long answer that is still
+# arriving is never reclaimed, and one whose worker died is back on the queue
+# this long after its last word. Longer than AGENT_STALE_CLAIM_SECONDS because
+# the gap before the first word includes retrieval and the model's thinking.
+CHAT_STALE_CLAIM_SECONDS = int(os.getenv("CHAT_STALE_CLAIM_SECONDS", "180"))
+
+# How often a streaming answer is written into its row. The chat polls about
+# once a second while an answer is open, so writing much more often than that
+# is UPDATEs nobody reads.
+CHAT_FLUSH_SECONDS = 0.5
 
 
 def reclaim_stale(conn) -> int:
@@ -155,13 +169,14 @@ def process(conn, row) -> bool:
     if not pending:
         # Not an exception, and worth its own message: a scanned PDF parses
         # perfectly and yields nothing, and "0 chunks" on its own reads like a
-        # bug in the pipeline rather than a property of the file.
+        # bug in the pipeline rather than a property of the file. A deck
+        # made entirely of pictures of slides is the same case.
         _mark_failed(
             conn,
             source_id,
             MAX_ATTEMPTS,
-            "No extractable text. If this is a scanned PDF it needs OCR before it "
-            "can be searched.",
+            "No extractable text. If this is a scanned PDF, or slides made of "
+            "images, it needs OCR before it can be searched.",
         )
         return False
 
@@ -554,6 +569,292 @@ def process_flashcard_set(conn, row) -> bool:
     return True
 
 
+def chat_available(conn) -> bool:
+    """Does the chat_messages table exist yet? The same startup guard as
+    study_guides_available, for the same reason: a deploy that gets ahead of
+    009 costs the chat queue and nothing else."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.chat_messages') IS NOT NULL")
+        return bool(cur.fetchone()[0])
+
+
+def reclaim_stale_chat(conn) -> int:
+    """Same as reclaim_stale, for chat answers. The half-written body goes
+    too: the retry starts the answer again from nothing, and leaving the old
+    start on screen until the new one overwrites it would read as two answers
+    spliced together."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE chat_messages
+               SET status = 'pending', claimed_at = NULL, body = '',
+                   updated_at = clock_timestamp()
+             WHERE status = 'processing'
+               AND claimed_at < now() - make_interval(secs => %s)
+            """,
+            (CHAT_STALE_CLAIM_SECONDS,),
+        )
+        return cur.rowcount
+
+
+def claim_next_chat_answer(conn):
+    """Claim one pending answer, or return None.
+
+    Same SKIP LOCKED shape as claim_next_agent_request, including the wait on
+    unsettled uploads: "drop the slides in, then ask about them" is the
+    ordinary way to use the chat, and answering before the slides are chunked
+    would answer from nothing.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE chat_messages cm
+               SET status = 'processing',
+                   claimed_at = now(),
+                   attempts = cm.attempts + 1,
+                   updated_at = clock_timestamp()
+             WHERE cm.id = (
+                   SELECT a.id
+                     FROM chat_messages a
+                    WHERE a.status = 'pending'
+                      AND a.role = 'assistant'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM sources s
+                           WHERE s.study_space_id = a.study_space_id
+                             AND s.status IN ('pending', 'processing')
+                      )
+                    ORDER BY a.created_at
+                      FOR UPDATE OF a SKIP LOCKED
+                    LIMIT 1
+             )
+         RETURNING cm.id, cm.study_space_id, cm.reply_to, cm.attempts,
+                   cm.kind, cm.source_ids, cm.context, cm.outline
+            """
+        )
+        return cur.fetchone()
+
+
+def _fail_chat_answer(conn, answer_id, attempts: int, message: str, *, retry: bool):
+    """Mirror of _fail_agent_request for chat answers. The partial body is
+    cleared on both paths, for the reason given on reclaim_stale_chat."""
+    give_up = not retry or attempts >= MAX_ATTEMPTS
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE chat_messages
+               SET status = %s, error = %s, body = '', claimed_at = NULL,
+                   finished_at = CASE WHEN %s THEN now() END,
+                   updated_at = clock_timestamp()
+             WHERE id = %s AND attempts = %s
+            """,
+            (
+                "failed" if give_up else "pending",
+                message[:MAX_ERROR_CHARS],
+                give_up,
+                answer_id,
+                attempts,
+            ),
+        )
+    verb = "failed" if give_up else f"will retry ({attempts}/{MAX_ATTEMPTS})"
+    print(f"  {verb}: {message[:200]}")
+
+
+def _load_chat_thread(conn, question_id):
+    """(question body, asker's name, earlier finished messages oldest first),
+    or None if the question is gone.
+
+    Only finished messages go into the history: a failed answer has no body,
+    and another answer still streaming in the same space is half a sentence.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT q.body, u.name, q.study_space_id, q.created_at
+              FROM chat_messages q
+              LEFT JOIN users u ON u.id = q.author_id
+             WHERE q.id = %s
+            """,
+            (question_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        body, name, space_id, created_at = row
+        cur.execute(
+            """
+            SELECT m.role, u.name, m.body
+              FROM chat_messages m
+              LEFT JOIN users u ON u.id = m.author_id
+             WHERE m.study_space_id = %s
+               AND m.created_at < %s
+               AND m.status = 'done'
+             ORDER BY m.created_at DESC
+             LIMIT %s
+            """,
+            (space_id, created_at, chat.HISTORY_MESSAGES),
+        )
+        history = list(reversed(cur.fetchall()))
+    return body, name, history
+
+
+def _load_note_files(conn, study_space_id, source_ids):
+    """[(filename, [(page_ref, text)])] for a notes request, in the order the
+    files were asked for.
+
+    The original upload is re-parsed when there is one, which gives pages in
+    true reading order. A source ingested from the command line stored no
+    file, and falls back to its chunks in physical (insertion) order:
+    source_chunks has no position column, but chunks are written once in
+    order and never updated, so ctid order is the order they were written.
+
+    Sources that are gone or failed are skipped rather than failing the whole
+    request; if none are left, the caller says so.
+    """
+    files = []
+    with conn.cursor() as cur:
+        for source_id in source_ids or []:
+            cur.execute(
+                """
+                SELECT filename, content_type, file_data
+                  FROM sources
+                 WHERE id = %s AND study_space_id = %s AND status = 'ready'
+                """,
+                (source_id, study_space_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                continue
+            filename, content_type, file_data = row
+            if file_data is not None:
+                pages = make_notes.pages_from_file(filename, content_type, bytes(file_data))
+            else:
+                cur.execute(
+                    "SELECT page_ref, text FROM source_chunks WHERE source_id = %s ORDER BY ctid",
+                    (source_id,),
+                )
+                pages = make_notes.pages_from_chunks(cur.fetchall())
+            files.append((filename, pages))
+    return files
+
+
+def process_chat_answer(conn, row) -> bool:
+    """Stream one answer into its row. Returns True on success."""
+    (answer_id, study_space_id, question_id, attempts,
+     kind, source_ids, context, outline) = row
+    verb = {"notes": "Writing notes for", "plan": "Planning notes for"}.get(kind, "Answering")
+    print(f"{verb} chat question {question_id}")
+
+    thread = _load_chat_thread(conn, question_id)
+    if thread is None:
+        _fail_chat_answer(conn, answer_id, attempts, "The question was deleted.", retry=False)
+        return False
+    question, author, history = thread
+
+    streamed: list[str] = []
+    last_flush = time.monotonic()
+
+    def write_body(body: str) -> None:
+        # `attempts` is the claim token, as everywhere else. A write that
+        # matches nothing means another worker reclaimed the row, and the
+        # rest of this stream is money spent on an answer nobody will see.
+        # Every write also renews claimed_at, which is what keeps a long
+        # answer from being reclaimed while it is still arriving.
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE chat_messages
+                   SET body = %s, claimed_at = now(), updated_at = clock_timestamp()
+                 WHERE id = %s AND attempts = %s AND status = 'processing'
+                """,
+                (body, answer_id, attempts),
+            )
+            if cur.rowcount == 0:
+                raise _ClaimLost()
+
+    def on_text(text: str) -> None:
+        nonlocal last_flush
+        streamed.append(text)
+        if time.monotonic() - last_flush < CHAT_FLUSH_SECONDS:
+            return
+        last_flush = time.monotonic()
+        write_body("".join(streamed))
+
+    def on_progress(status_line: str) -> None:
+        # Shown in place of the answer until the notes themselves start
+        # arriving. Reading a long book in parts streams nothing, and a
+        # "Thinking…" that lasts two minutes looks like a hang.
+        if not streamed:
+            write_body(f"_{status_line}_")
+
+    planned = None
+    try:
+        if kind in ("notes", "plan"):
+            files = _load_note_files(conn, study_space_id, source_ids)
+            if not files:
+                raise make_notes.NotesError(
+                    "Those files are no longer in this space, or could not be read."
+                )
+        if kind == "plan":
+            on_progress("Reading the files to plan the notes…")
+            planned = make_notes.plan(files, question, context or "")
+            body, citations = make_notes.plan_as_text(planned), []
+        elif kind == "notes":
+            body, citations = make_notes.generate(
+                files, question, context or "", on_text, on_progress, outline=outline
+            )
+            if not make_notes.has_notes(body, citations):
+                # "Your notes already cover this" — a reply, not notes. Stored
+                # as an ordinary answer so nothing offers to insert it, and an
+                # auto or plan request does not insert it by itself.
+                kind = "answer"
+        else:
+            body, citations = chat.answer(
+                str(study_space_id), history, author or "A member", question, on_text
+            )
+    except _ClaimLost:
+        print("  claim was reclaimed by another worker; abandoning this answer")
+        return False
+    except make_notes.NotesError as exc:
+        _fail_chat_answer(conn, answer_id, attempts, str(exc), retry=False)
+        return False
+    except chat.Declined as exc:
+        _fail_chat_answer(conn, answer_id, attempts, str(exc), retry=False)
+        return False
+    except (anthropic.APIError, TypeError) as exc:
+        message, retry = _describe_agent_error(exc)
+        _fail_chat_answer(conn, answer_id, attempts, message, retry=retry)
+        return False
+    except Exception as exc:  # noqa: BLE001 — every failure is the asker's to see
+        _fail_chat_answer(conn, answer_id, attempts, f"The answer failed: {exc}", retry=True)
+        return False
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE chat_messages
+               SET status = 'done', body = %s, citations = %s, error = NULL,
+                   outline = COALESCE(%s, outline), kind = %s,
+                   claimed_at = NULL, finished_at = now(),
+                   updated_at = clock_timestamp()
+             WHERE id = %s AND attempts = %s
+            """,
+            (
+                body,
+                Jsonb(citations),
+                Jsonb(planned) if planned is not None else None,
+                kind,
+                answer_id,
+                attempts,
+            ),
+        )
+        if cur.rowcount == 0:
+            print("  claim was reclaimed by another worker; discarding this answer")
+            return False
+
+    print(f"  {len(body)} chars, {len(citations)} citation(s)")
+    return True
+
+
 def reclaim_stale_study_guides(conn) -> int:
     """Same as reclaim_stale, for the study-guide queue."""
     with conn.cursor() as cur:
@@ -714,6 +1015,15 @@ def run(once: bool = False):
             print("         restart this worker. Uploads and checks are "
                   "unaffected.")
 
+        chat_on = chat_available(conn)
+        if not chat_on:
+            print("WARNING: no chat_messages table — the space chat is OFF "
+                  "for this process.")
+            print("         Apply infra/migrations/009_chat.sql, re-run")
+            print("         infra/supabase/011_lockdown.sql on Supabase, then")
+            print("         restart this worker. Everything else is "
+                  "unaffected.")
+
         cards_on = flashcards_available(conn)
         if not cards_on:
             print("WARNING: no flashcard_sets table — flashcards are OFF "
@@ -729,6 +1039,8 @@ def run(once: bool = False):
                 reclaimed += reclaim_stale_study_guides(conn)
             if cards_on:
                 reclaimed += reclaim_stale_flashcards(conn)
+            if chat_on:
+                reclaimed += reclaim_stale_chat(conn)
             if reclaimed:
                 print(f"Reclaimed {reclaimed} stale claim(s)")
 
@@ -737,6 +1049,14 @@ def run(once: bool = False):
             if request is not None:
                 idle_logged = False
                 process_agent_request(conn, request)
+                continue
+
+            # Chat answers level with checks: someone is watching the reply
+            # appear. Checks go first only because they are shorter.
+            answer = claim_next_chat_answer(conn) if chat_on else None
+            if answer is not None:
+                idle_logged = False
+                process_chat_answer(conn, answer)
                 continue
 
             # Guides next. Someone is waiting on these too, but a guide is one
@@ -771,13 +1091,19 @@ def run(once: bool = False):
                 # that is off for a missing migration is visible in the log
                 # rather than looking like an empty queue.
                 jobs = ["uploads", "checks"]
+                if chat_on:
+                    jobs.append("chat")
                 if guides_on:
                     jobs.append("guides")
                 if cards_on:
                     jobs.append("flashcards")
                 off = [
                     name
-                    for name, on in (("guides", guides_on), ("flashcards", cards_on))
+                    for name, on in (
+                        ("chat", chat_on),
+                        ("guides", guides_on),
+                        ("flashcards", cards_on),
+                    )
                     if not on
                 ]
                 listed = ", ".join(jobs[:-1]) + " and " + jobs[-1]
