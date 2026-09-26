@@ -2,6 +2,15 @@ import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
 import type { Source } from "../lib/types";
+import RowMenu from "./RowMenu";
+import {
+  IconDelete,
+  IconDocument,
+  IconEmpty,
+  IconFilePdf,
+  IconRestart,
+  IconUploadCloud,
+} from "./Icon";
 
 const ACCEPT = ".pdf,.md,.markdown,.txt";
 const POLL_MS = 2500;
@@ -28,11 +37,39 @@ function isSettled(source: Source): boolean {
   return source.status === "ready" || source.status === "failed";
 }
 
+/** What the row says under the filename.
+ *
+ * Every state gets words. The card used to carry its status only as the
+ * colour of a 6px dot, which cannot be read aloud, cannot be told apart by
+ * roughly one man in twelve, and does not say what "amber" means even to
+ * someone who can see it. */
+function statusLabel(s: Source): string {
+  switch (s.status) {
+    case "ready": {
+      const chunks = `${s.chunk_count} chunk${s.chunk_count === 1 ? "" : "s"}`;
+      return s.byte_size === null
+        ? chunks
+        : `${chunks} · ${formatSize(s.byte_size)}`;
+    }
+    case "pending":
+      return "Queued";
+    case "processing":
+      return "Processing…";
+    case "failed":
+      return "Failed";
+  }
+}
+
 export default function SourcesPanel({ spaceId }: { spaceId: string }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  // Counted rather than a boolean: dragenter/dragleave also fire as the
+  // pointer crosses the zone's own children, so a plain flag flickers off the
+  // moment the cursor passes over the icon.
+  const dragDepth = useRef(0);
   // Bumped by upload and retry to restart the poll below. Those actions put
   // work back in flight, and the loop has usually already exited by then —
   // without this the panel would sit on "Queued" until something else
@@ -132,14 +169,44 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
       !isSettled(s) && Date.now() - new Date(s.uploaded_at).getTime() > WORKER_SUSPECT_MS
   );
 
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (uploading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) void upload(file);
+  }
+
   return (
     <aside className="sources-panel">
-      <h2>Source material</h2>
-      <p className="muted">
-        Slides, chapters, handouts. The agent may only cite what's here.
-      </p>
+      <div className="panel-head">
+        <h2>Source material</h2>
+        {sources.length > 0 && (
+          <span className="panel-count">{sources.length}</span>
+        )}
+      </div>
 
-      <label className="upload-button">
+      {/* A dashed rectangle is the universal sign for "drop a file here", and
+          this one only took clicks. Accepting the drop costs four handlers and
+          removes the step where someone drags a file onto the panel, watches
+          nothing happen, and goes looking for a button. */}
+      <label
+        className={`upload-zone${dragging ? " is-dragging" : ""}${
+          uploading ? " is-busy" : ""
+        }`}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragDepth.current += 1;
+          setDragging(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          dragDepth.current -= 1;
+          if (dragDepth.current <= 0) setDragging(false);
+        }}
+        onDrop={onDrop}
+      >
         <input
           ref={fileInput}
           type="file"
@@ -150,7 +217,11 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
             if (file) void upload(file);
           }}
         />
-        {uploading ? "Uploading…" : "Upload a file"}
+        <IconUploadCloud className="upload-mark" size={20} />
+        <span className="upload-label">
+          {uploading ? "Uploading…" : "Drop a file or browse"}
+        </span>
+        <span className="upload-hint">PDF, Markdown or text</span>
       </label>
 
       {error && <p className="error">{error}</p>}
@@ -162,40 +233,68 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
         </p>
       )}
 
+      {/* The explanation lives in the empty state rather than above the list
+          for good. It is onboarding copy — read once, then two lines of grey
+          sitting on top of the answer it was explaining. */}
       {sources.length === 0 && !error && (
-        <p className="muted">Nothing uploaded yet.</p>
+        <div className="panel-empty">
+          <IconEmpty className="panel-empty-mark" size={22} />
+          <p className="panel-empty-title">No sources yet</p>
+          <p className="panel-empty-body">
+            Slides, chapters, handouts. The agent may only cite what's here.
+          </p>
+        </div>
       )}
 
       <ul className="source-list">
-        {sources.map((s) => (
-          <li key={s.id} className={`source-card source-${s.status}`}>
-            <span className="source-name" title={s.filename}>
-              {s.filename}
-            </span>
-            <span className="source-meta">
-              {s.status === "ready" && (
-                <>
-                  {s.chunk_count} chunk{s.chunk_count === 1 ? "" : "s"}
-                  {s.byte_size !== null && ` · ${formatSize(s.byte_size)}`}
-                </>
-              )}
-              {s.status === "pending" && "Queued"}
-              {s.status === "processing" && "Processing…"}
-              {s.status === "failed" && "Failed"}
-            </span>
-            {s.status === "failed" && s.error && (
-              <p className="source-error">{s.error}</p>
-            )}
-            <div className="source-actions">
-              {s.status === "failed" && (
-                <button onClick={() => void retry(s.id)}>Retry</button>
-              )}
+        {sources.map((s) => {
+          const isPdf = s.filename.toLowerCase().endsWith(".pdf");
+          const Mark = isPdf ? IconFilePdf : IconDocument;
+          return (
+            <li key={s.id} className={`source-card source-${s.status}`}>
+              <Mark className="source-icon" />
+              <div className="source-text">
+                <span className="source-name" title={s.filename}>
+                  {s.filename}
+                </span>
+                <span className="source-meta">
+                  <span className="source-dot" aria-hidden="true" />
+                  {statusLabel(s)}
+                </span>
+              </div>
+
+              {/* The same menu the document rail uses. A bare "Remove" button
+                  inside the card was the loudest thing in it, which is the
+                  wrong emphasis for the one action that cannot be undone. */}
               {isSettled(s) && (
-                <button onClick={() => void remove(s.id, s.filename)}>Remove</button>
+                <RowMenu
+                  label={`Actions for ${s.filename}`}
+                  items={[
+                    ...(s.status === "failed"
+                      ? [
+                          {
+                            label: "Retry",
+                            icon: <IconRestart size={14} />,
+                            onSelect: () => void retry(s.id),
+                          },
+                        ]
+                      : []),
+                    {
+                      label: "Remove",
+                      icon: <IconDelete size={14} />,
+                      destructive: true,
+                      onSelect: () => void remove(s.id, s.filename),
+                    },
+                  ]}
+                />
               )}
-            </div>
-          </li>
-        ))}
+
+              {s.status === "failed" && s.error && (
+                <p className="source-error">{s.error}</p>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </aside>
   );
