@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, LargeBinary, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -284,6 +284,64 @@ class FlashcardSet(Base):
     cards: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class ChatMessage(Base):
+    """One message in a space's shared chat: a question or an answer. See 009.
+
+    created_at and updated_at are left to the database's clock_timestamp()
+    defaults rather than a Python default like every other table here: a
+    question and its answer row are written in one transaction and need
+    distinct, ordered timestamps, and updated_at is the poll cursor, so it has
+    to come from the same clock the worker writes with.
+    """
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    study_space_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("study_spaces.id"))
+    role: Mapped[str] = mapped_column(String)
+    # 'answer' or 'notes' — see 010_chat_notes.sql.
+    kind: Mapped[str] = mapped_column(String, default="answer")
+    source_ids: Mapped[list[uuid.UUID] | None] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=True
+    )
+    # Deferred: the open document's text, up to MAX_NOTES_CHARS, written once
+    # here and read only by the worker. The thread is polled every second
+    # while an answer streams and has no use for it.
+    context: Mapped[str | None] = mapped_column(Text, nullable=True, deferred=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    reply_to: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chat_messages.id"), nullable=True
+    )
+    body: Mapped[str] = mapped_column(Text, default="")
+    citations: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="done")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.clock_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.clock_timestamp())
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # See 011_chat_modes.sql for all five.
+    mode: Mapped[str | None] = mapped_column(String, nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id"), nullable=True
+    )
+    outline: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    applied_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
+    author: Mapped["User | None"] = relationship(foreign_keys=[author_id])
+    # The question an answer answers, for its author: the asker's browser is
+    # the one that inserts auto and plan notes, and has to recognise them.
+    question: Mapped["ChatMessage | None"] = relationship(
+        remote_side=[id], foreign_keys=[reply_to]
+    )
 
 
 class Comment(Base):

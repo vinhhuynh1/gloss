@@ -59,6 +59,12 @@ psql "$SUPABASE_DB_URL" -f infra/migrations/002_indexes.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/003_source_ingestion.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/004_agent_requests.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/005_study_guides.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/006_comments.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/007_flashcards.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/008_document_titles.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/009_chat.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/010_chat_notes.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/011_chat_modes.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
 ```

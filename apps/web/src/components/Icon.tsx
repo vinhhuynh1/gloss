@@ -17,11 +17,14 @@
  */
 import {
   ArrowLeft,
+  ArrowUp,
   Bold,
   Braces,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CloudUpload,
   Layers,
   Code,
@@ -38,6 +41,7 @@ import {
   MessageSquare,
   Monitor,
   MoreHorizontal,
+  Paperclip,
   Moon,
   Pencil,
   Plus,
@@ -97,6 +101,12 @@ export const IconRedo = wrap(Redo2);
 export const IconAgent = wrap(Sparkles);
 export const IconComment = wrap(MessageSquare);
 export const IconCards = wrap(Layers);
+/* Send, in the chat bar. Up rather than a paper plane: it is the one action
+   the bar has, and an arrow reads as "go" without a label. */
+export const IconSend = wrap(ArrowUp);
+export const IconAttach = wrap(Paperclip);
+export const IconMoveUp = wrap(ChevronUp);
+export const IconMoveDown = wrap(ChevronDown);
 
 /* --- documents and sources --- */
 export const IconDocument = wrap(FileText);

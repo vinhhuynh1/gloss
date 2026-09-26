@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
+import { SOURCE_ACCEPT, SOURCES_CHANGED_EVENT } from "../lib/sources";
 import type { Source } from "../lib/types";
 import ConfirmDialog from "./ConfirmDialog";
 import RowMenu from "./RowMenu";
@@ -13,7 +14,7 @@ import {
   IconUploadCloud,
 } from "./Icon";
 
-const ACCEPT = ".pdf,.md,.markdown,.txt";
+const ACCEPT = SOURCE_ACCEPT;
 const POLL_MS = 2500;
 /** Ceiling on the retry wait after a failed poll. Long enough that a stopped
  * API isn't hammered, short enough that the panel corrects itself on its own
@@ -121,6 +122,14 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
     };
   }, [spaceId, pollToken]);
 
+  // A file dropped on the chat bar is uploaded without this panel knowing,
+  // and the poll above has usually stopped by then.
+  useEffect(() => {
+    const onChanged = () => setPollToken((t) => t + 1);
+    window.addEventListener(SOURCES_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SOURCES_CHANGED_EVENT, onChanged);
+  }, []);
+
   async function upload(file: File) {
     setUploading(true);
     setError(null);
@@ -221,7 +230,7 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
         <span className="upload-label">
           {uploading ? "Uploading…" : "Drop a file or browse"}
         </span>
-        <span className="upload-hint">PDF, Markdown or text</span>
+        <span className="upload-hint">PDF, PowerPoint, Markdown or text</span>
       </label>
 
       {error && <p className="error">{error}</p>}

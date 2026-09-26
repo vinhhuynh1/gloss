@@ -223,3 +223,58 @@ export interface AnchoredAnnotation {
   /** ProseMirror document position of the start of the anchored span. */
   from: number;
 }
+
+/** One cited excerpt on a chat answer. `n` is the [n] marker in the body. */
+export interface ChatCitation {
+  n: number;
+  chunk_id: string;
+  filename: string;
+  page_ref: string | null;
+  excerpt: string;
+}
+
+/** One section of a notes plan. `pages` are the worker's page numbers for
+ * the material, carried back unchanged when the plan is approved. */
+export interface OutlineSection {
+  heading: string;
+  summary: string;
+  pages: number[];
+}
+
+/** How "Make notes" delivers: "plan" asks for an outline to approve first,
+ * "auto" writes straight into the document. */
+export type NotesMode = "plan" | "auto";
+
+/** Questions are always "done"; answers move pending -> processing -> done |
+ * failed, and their body grows while "processing". */
+export type ChatStatus = "pending" | "processing" | "done" | "failed";
+
+export interface ChatMessage {
+  id: string;
+  study_space_id: string;
+  role: "user" | "assistant";
+  /** "notes" answers are notes written from whole files, for inserting into
+   * the document; "plan" is the outline for notes not yet written; "answer"
+   * is an ordinary reply. Always "answer" on questions. */
+  kind: "answer" | "notes" | "plan";
+  author_id: string | null;
+  author_name: string | null;
+  reply_to: string | null;
+  body: string;
+  citations: ChatCitation[] | null;
+  status: ChatStatus;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  /** On notes and plan answers; null means the notes wait for Insert. */
+  mode: NotesMode | null;
+  /** The document the notes were asked for, and are inserted into. */
+  document_id: string | null;
+  outline: OutlineSection[] | null;
+  /** Notes: when they went into the document. Plan: when it was approved. */
+  applied_at: string | null;
+  applied_by: string | null;
+  /** On an answer, who asked. */
+  requested_by: string | null;
+}
