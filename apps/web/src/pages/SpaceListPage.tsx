@@ -215,7 +215,11 @@ export default function SpaceListPage({
               Create your first space
             </button>
           </div>
-        ) : shown.length === 0 ? (
+        ) : query.trim() && shown.length === 0 ? (
+          // Only when a filter is typed. With no spaces at all, "Create your
+          // first space" sets `creating` and lands here too — and without the
+          // query check it showed "Nothing matches “”" in place of the create
+          // form, so a new account could never make its first space.
           <div className="empty-state">
             <p className="empty-state-title">Nothing matches “{query}”</p>
             <button className="link-button" onClick={() => setQuery("")}>
