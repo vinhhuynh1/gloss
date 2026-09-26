@@ -11,17 +11,18 @@ import EditorToolbar from "./EditorToolbar";
 import SlashMenu from "./SlashMenu";
 import {
   CommentHighlights,
-  anchoredCommentIds,
+  anchoredCommentPositions,
   setHighlightedThreads,
 } from "../extensions/CommentHighlights";
 import { SlashMenu as SlashMenuExtension } from "../extensions/SlashMenu";
 import {
   SuggestionHighlights,
-  anchoredSuggestionIds,
+  anchoredSuggestionPositions,
   setHighlightedSuggestions,
 } from "../extensions/SuggestionHighlights";
 import { type PassageAnchor, selectionToAnchor } from "../lib/anchors";
-import type { CommentThread, Suggestion } from "../lib/types";
+import type { AnchoredAnnotation, CommentThread, Suggestion } from "../lib/types";
+import { IconAgent, IconComment } from "./Icon";
 
 interface EditorProps {
   ydoc: Y.Doc;
@@ -39,10 +40,13 @@ interface EditorProps {
   onSelectSuggestion: (suggestionId: string) => void;
   /** A comment highlight was clicked. */
   onSelectComment: (commentId: string) => void;
-  /** Which suggestions currently have a highlight, i.e. can still be applied. */
-  onAnchoredChange: (ids: string[]) => void;
-  /** Which threads still have a highlight; the rest are detached. */
-  onAnchoredCommentsChange: (ids: string[]) => void;
+  /** Everything anchored in the text, in the order it appears there.
+   *
+   * One stream rather than two id lists: the margin shows suggestions and
+   * comment threads together, ordered by position rather than grouped by
+   * type, so the ordering has to be computed where the ProseMirror state
+   * lives. Anything missing from this list has lost its passage. */
+  onAnnotationsChange: (annotations: AnchoredAnnotation[]) => void;
   /** The editor instance, for applying accepted suggestions. */
   onEditor: (editor: TiptapEditor | null) => void;
 }
@@ -57,8 +61,7 @@ export default function Editor({
   onComment,
   onSelectSuggestion,
   onSelectComment,
-  onAnchoredChange,
-  onAnchoredCommentsChange,
+  onAnnotationsChange,
   onEditor,
 }: EditorProps) {
   // useEditor runs with no deps and captures its options once (see the note
@@ -129,38 +132,31 @@ export default function Editor({
     editor.view.dispatch(setHighlightedThreads(editor.state, threads));
   }, [editor, threads]);
 
-  // Report which suggestions still have a highlight. Checked after every
-  // transaction, because a collaborator deleting a passage is what removes one.
-  const anchoredRef = useRef("");
+  // Report everything anchored, in document order, after every transaction —
+  // a collaborator deleting a passage is what removes one, and typing above
+  // one is what reorders them.
+  //
+  // The key comparison keeps this from re-rendering the margin on every
+  // keystroke: positions shift constantly while the *order* rarely changes.
+  const annotationKey = useRef("");
   useEffect(() => {
     if (!editor) return;
     const report = () => {
-      const ids = anchoredSuggestionIds(editor.state).sort();
-      const key = ids.join(",");
-      if (key !== anchoredRef.current) {
-        anchoredRef.current = key;
-        onAnchoredChange(ids);
-      }
-    };
-    report();
-    editor.on("transaction", report);
-    return () => {
-      editor.off("transaction", report);
-    };
-  }, [editor, onAnchoredChange]);
+      const merged: AnchoredAnnotation[] = [
+        ...anchoredSuggestionPositions(editor.state).map((a) => ({
+          ...a,
+          kind: "suggestion" as const,
+        })),
+        ...anchoredCommentPositions(editor.state).map((a) => ({
+          ...a,
+          kind: "comment" as const,
+        })),
+      ].sort((a, b) => a.from - b.from);
 
-  // Same for threads: a thread whose passage a collaborator deleted stops
-  // being anchored, and the sidebar marks it detached rather than pretending
-  // it still points at something.
-  const anchoredCommentsRef = useRef("");
-  useEffect(() => {
-    if (!editor) return;
-    const report = () => {
-      const ids = anchoredCommentIds(editor.state).sort();
-      const key = ids.join(",");
-      if (key !== anchoredCommentsRef.current) {
-        anchoredCommentsRef.current = key;
-        onAnchoredCommentsChange(ids);
+      const key = merged.map((a) => `${a.kind}:${a.id}`).join(",");
+      if (key !== annotationKey.current) {
+        annotationKey.current = key;
+        onAnnotationsChange(merged);
       }
     };
     report();
@@ -168,7 +164,7 @@ export default function Editor({
     return () => {
       editor.off("transaction", report);
     };
-  }, [editor, onAnchoredCommentsChange]);
+  }, [editor, onAnnotationsChange]);
 
   /** The bubble-menu actions differ only in which callback they hand the
    * anchor to, so they share everything else: read the selection from editor
@@ -198,14 +194,16 @@ export default function Editor({
             onClick={() => fromSelection(askRef.current)}
             title="Check this passage against the course material (Ctrl+Alt+M)"
           >
-            ✨ Check with AI
+            <IconAgent />
+            Check with AI
           </button>
           <button
             className="comment-button"
             onClick={() => fromSelection(commentRef.current)}
             title="Comment on this passage"
           >
-            💬 Comment
+            <IconComment />
+            Comment
           </button>
         </BubbleMenu>
       )}
