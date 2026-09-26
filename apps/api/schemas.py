@@ -8,9 +8,9 @@ something concrete to mirror.
 """
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class ORMModel(BaseModel):
@@ -255,6 +255,91 @@ class FlashcardsOut(FlashcardsStatusOut):
     """
 
     cards: dict | None
+
+
+# A question, not a document. The question is embedded as a retrieval query,
+# and past a couple of paragraphs a query matches everything a little and
+# nothing well — the same reasoning as MAX_PASSAGE_CHARS, at half the size
+# because a question is shorter than the passage it would be about.
+MAX_CHAT_CHARS = 2000
+
+
+# Files one notes request may read. Each is read whole, so this is the bound
+# on how much material one click sends through the model.
+MAX_NOTES_SOURCES = 5
+
+
+# An outline section, as a plan answer offers it and as the asker approves it
+# after trimming, reordering and renaming. `pages` are the page numbers the
+# worker assigned when it read the files; they steer which material goes under
+# which heading and are not shown.
+class OutlineSection(BaseModel):
+    heading: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    summary: Annotated[str, StringConstraints(max_length=500)] = ""
+    pages: Annotated[list[int], Field(max_length=500)] = []
+
+
+# A plan longer than this is not a plan the asker will read before approving.
+MAX_OUTLINE_SECTIONS = 30
+
+
+class CreateChatMessage(BaseModel):
+    body: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_CHAT_CHARS)
+    ]
+    # 'notes' reads source_ids front to back and writes notes from them, with
+    # body as the asker's instructions. See 010_chat_notes.sql.
+    kind: Literal["answer", "notes"] = "answer"
+    source_ids: Annotated[list[uuid.UUID], Field(max_length=MAX_NOTES_SOURCES)] = []
+    # The open document's text, for a notes request, so it can add what the
+    # group has not already written. Same bound as a study guide's notes.
+    notes: Annotated[str, StringConstraints(max_length=MAX_NOTES_CHARS)] = ""
+    # For kind 'notes'. 'auto' writes the notes and has the asker's browser
+    # insert them; 'plan' first answers with an outline to approve. Omitted,
+    # the notes wait for someone to click Insert.
+    mode: Literal["auto", "plan"] | None = None
+    # The document open when the notes were asked for; they are inserted
+    # into it and nowhere else.
+    document_id: uuid.UUID | None = None
+    # Approving a plan: the plan answer's id, and its outline as edited.
+    # source_ids and document_id are then taken from the plan.
+    plan_id: uuid.UUID | None = None
+    outline: Annotated[list[OutlineSection], Field(max_length=MAX_OUTLINE_SECTIONS)] = []
+
+
+class ChatMessageOut(ORMModel):
+    """One message in the space chat, question or answer.
+
+    Carries the author's name for the same reason CommentOut does: the thread
+    renders "Khang asked" without a request per message. Both are null on an
+    answer, and on a question whose author has since left the space's users.
+
+    `citations` stays a plain list for the same reason `guide` stays a plain
+    dict: its shape is written by apps/agent-worker/chat.py, and declaring it
+    twice would mean two places to change.
+    """
+
+    id: uuid.UUID
+    study_space_id: uuid.UUID
+    role: str  # user | assistant
+    kind: str  # answer | notes | plan
+    author_id: uuid.UUID | None
+    author_name: str | None
+    reply_to: uuid.UUID | None
+    body: str
+    citations: list | None
+    status: str  # done for questions; pending | processing | done | failed for answers
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None
+    mode: str | None  # auto | plan, on notes and plan answers
+    document_id: uuid.UUID | None
+    outline: list | None
+    applied_at: datetime | None
+    applied_by: uuid.UUID | None
+    # Who asked, on an answer: its question's author.
+    requested_by: uuid.UUID | None
 
 
 # A comment, not a document. Long enough for a real explanation, short enough

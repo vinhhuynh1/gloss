@@ -2,10 +2,13 @@
  * Headings in the current document, as a jump list.
  *
  * Derived from the editor state on every render rather than kept in state of
- * its own: useEditor re-renders on each transaction, so this list is correct
- * after a local edit *and* after a collaborator's, with no subscription to
- * keep in sync. The document is the single source of truth, which is the same
- * reason the editor takes no `content` prop.
+ * its own — the document is the single source of truth, which is the same
+ * reason the editor takes no `content` prop. It does subscribe to the editor's
+ * updates, though only to re-render: useEditor re-renders the Editor
+ * component on each transaction, not the Workspace this panel sits in, so
+ * without it the list went stale whenever a change arrived by some other
+ * route than typing — notes inserted from the space chat, or a
+ * collaborator's edit.
  *
  * Scrolling uses the ProseMirror DOM node for the heading rather than a
  * fragment id. Headings here have no ids — they are CRDT nodes, not anchors —
@@ -13,6 +16,7 @@
  * where every collaborator would have to merge them.
  */
 import type { Editor } from "@tiptap/react";
+import { useEffect, useReducer } from "react";
 
 interface Entry {
   /** ProseMirror document position, which is also a stable React key within
@@ -35,6 +39,15 @@ function headings(editor: Editor): Entry[] {
 }
 
 export default function DocumentOutline({ editor }: { editor: Editor | null }) {
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!editor) return;
+    editor.on("update", rerender);
+    return () => {
+      editor.off("update", rerender);
+    };
+  }, [editor]);
+
   if (!editor) return null;
   const entries = headings(editor);
 

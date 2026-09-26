@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from routers import (
     agent_requests,
+    chat,
     comments,
     documents,
     flashcards,
@@ -43,6 +44,7 @@ app.include_router(suggestions.router)
 app.include_router(study_guides.router)
 app.include_router(comments.router)
 app.include_router(flashcards.router)
+app.include_router(chat.router)
 
 # Mounted only when DEV_AUTH_SECRET is set, so a deployment that simply does
 # not set the variable cannot expose a passwordless login by accident — there

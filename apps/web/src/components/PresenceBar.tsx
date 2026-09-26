@@ -68,7 +68,7 @@ export default function PresenceBar({
       {/* One chip per clientId, not per user. Two tabs signed in as the same
           person are two chips — which is exactly the visible proof that the
           second tab really connected. */}
-      <div className="presence-chips">
+      <div className="presence-chips" >
         {peers.map((peer) => (
           <span
             key={peer.clientId}
