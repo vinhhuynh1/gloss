@@ -22,7 +22,13 @@ from auth import CurrentUser
 from authz import require_document
 from database import get_db
 from models import StudyGuide
-from schemas import CreateStudyGuide, StudyGuideOut, StudyGuideStatusOut
+from generation_progress import progress_for
+from schemas import (
+    CreateStudyGuide,
+    StudyGuideOut,
+    StudyGuideProgressOut,
+    StudyGuideStatusOut,
+)
 
 # Flipped once the table has been seen, and never checked again. The status
 # endpoint is polled every two seconds by every open editor, and a schema that
@@ -140,7 +146,7 @@ def create_study_guide(
     return guide
 
 
-@router.get("/{document_id}/study-guide", response_model=StudyGuideStatusOut)
+@router.get("/{document_id}/study-guide", response_model=StudyGuideProgressOut)
 def get_study_guide_status(
     document_id: uuid.UUID, user: CurrentUser, db: Session = Depends(get_db)
 ):
@@ -154,7 +160,10 @@ def get_study_guide_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No study guide has been generated for this document yet.",
         )
-    return guide
+    return StudyGuideProgressOut(
+        **StudyGuideStatusOut.model_validate(guide).model_dump(),
+        **progress_for(db, "study_guides", guide.id),
+    )
 
 
 @router.get("/{document_id}/study-guide/content", response_model=StudyGuideOut)

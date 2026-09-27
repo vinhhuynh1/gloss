@@ -61,6 +61,58 @@ function ago(iso: string | null): string {
 }
 
 /**
+ * A generate button that shows how far along its job is.
+ *
+ * "Queued" and "running" are told apart on purpose: a job that sits at
+ * Queued is waiting for the agent worker, and one that never leaves it is a
+ * worker that is not running — the most common reason a guide "takes
+ * forever". Once running, the percentage and the bar along the bottom come
+ * from the worker (apps/agent-worker/progress.py); the stage is in the
+ * tooltip. Without migration 012 there is no percentage, and the button says
+ * what it always said.
+ */
+function GenerateButton({
+  label,
+  runningLabel,
+  row,
+  running,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  runningLabel: string;
+  row: { status: string; progress?: number | null; stage?: string | null } | null;
+  running: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  if (!running || !row) {
+    return (
+      <button onClick={onClick} disabled={disabled}>
+        {label}
+      </button>
+    );
+  }
+  const queued = row.status === "pending";
+  const percent = typeof row.progress === "number" && !queued ? row.progress : null;
+  return (
+    <button
+      className={`generate-button is-running${queued ? " is-queued" : ""}`}
+      disabled
+      aria-busy="true"
+      title={queued ? "Waiting for the agent worker to pick this up" : row.stage ?? undefined}
+      style={percent !== null ? ({ "--progress": `${percent}%` } as React.CSSProperties) : undefined}
+    >
+      {queued
+        ? `${label} queued…`
+        : percent !== null
+          ? `${runningLabel} ${percent}%`
+          : runningLabel}
+    </button>
+  );
+}
+
+/**
  * The three rails: what the agent may cite, what the group wrote, what the
  * agent proposes. Split out of SpacePage so it mounts only once the document
  * id is known — everything about suggestions is keyed on it.
@@ -221,9 +273,14 @@ function Workspace({
   return (
     <>
       <div className="workspace-toolbar">
-        <button onClick={requestGuide} disabled={!editor || asking || guideRunning}>
-          {guideRunning ? "Writing study guide…" : "Study guide"}
-        </button>
+        <GenerateButton
+          label="Study guide"
+          runningLabel="Writing study guide…"
+          row={guideRow}
+          running={guideRunning}
+          disabled={!editor || asking || guideRunning}
+          onClick={requestGuide}
+        />
         {/* Not "Open the last guide". A chip that names the thing and says
             how old it is answers the question someone actually has — is this
             still the guide for the notes in front of me, or did I write two
@@ -244,12 +301,14 @@ function Workspace({
             <IconNext className="result-chip-go" />
           </button>
         )}
-        <button
-          onClick={requestDeck}
+        <GenerateButton
+          label="Flashcards"
+          runningLabel="Writing flashcards…"
+          row={deckRow}
+          running={deckRunning}
           disabled={!editor || askingDeck || deckRunning}
-        >
-          {deckRunning ? "Writing flashcards…" : "Flashcards"}
-        </button>
+          onClick={requestDeck}
+        />
         {deck && !deckRunning && (
           <button
             className="result-chip is-agent"

@@ -13,7 +13,8 @@ note at the top of study_guide.py.
 """
 import json
 
-from agent import ANTHROPIC_MODEL, MAX_TOKENS, _get_client
+import progress
+from agent import MAX_TOKENS
 from prompts import FLASHCARDS_SYSTEM_PROMPT, build_flashcards_prompt
 from study_guide import EmptyNotesError, retrieve_for_notes, split_sections
 
@@ -87,33 +88,32 @@ def _validate_deck(result: dict, chunks: list[dict]) -> dict:
     }
 
 
-def call_llm(notes: str, chunks: list[dict]) -> dict:
-    response = _get_client().beta.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=MAX_TOKENS,
+def call_llm(
+    notes: str, chunks: list[dict], report: progress.Report = progress.ignore
+) -> dict:
+    # Streamed for progress, as study_guide.call_llm is, with the same
+    # fallback on a policy decline.
+    text, stop_reason = progress.stream_structured(
         system=FLASHCARDS_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": build_flashcards_prompt(notes, chunks)}],
-        output_config={"format": {"type": "json_schema", "schema": CARDS_SCHEMA}},
-        # Same reasoning as study_guide.call_llm: a policy decline is re-run on
-        # the recommended fallback rather than coming back as a refusal.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
+        content=build_flashcards_prompt(notes, chunks),
+        schema=CARDS_SCHEMA,
+        report=report,
+        expected=progress.expected_chars(notes, per_note_char=1.5, floor=4000, ceiling=30000),
     )
 
-    if response.stop_reason == "refusal":
+    if stop_reason == "refusal":
         raise RuntimeError("Model declined to write flashcards for these notes")
-    if response.stop_reason == "max_tokens":
+    if stop_reason == "max_tokens":
         raise RuntimeError(f"Response hit max_tokens ({MAX_TOKENS}) before finishing")
 
-    text = next((b.text for b in response.content if b.type == "text"), None)
     if text is None:
-        raise ValueError(
-            f"No text block in response (stop_reason={response.stop_reason!r})"
-        )
+        raise ValueError(f"No text block in response (stop_reason={stop_reason!r})")
     return _validate_deck(json.loads(text), chunks)
 
 
-def generate(study_space_id: str, notes: str) -> tuple[dict, list[dict]]:
+def generate(
+    study_space_id: str, notes: str, report: progress.Report = progress.ignore
+) -> tuple[dict, list[dict]]:
     """One deck. Returns it with the chunks it was given, so a caller that
     wants to score the grounding can see both — same signature as
     study_guide.generate."""
@@ -121,11 +121,11 @@ def generate(study_space_id: str, notes: str) -> tuple[dict, list[dict]]:
     if not sections:
         raise EmptyNotesError("There are no notes in this document yet.")
 
-    chunks = retrieve_for_notes(study_space_id, sections)
+    chunks = retrieve_for_notes(study_space_id, sections, report)
     if not chunks:
         raise EmptyNotesError(
             "No source material has been ingested for this study space yet, "
             "so there is nothing to ground flashcards in."
         )
 
-    return call_llm(notes, chunks), chunks
+    return call_llm(notes, chunks, report), chunks

@@ -16,13 +16,8 @@ embeddings and gets material that is actually about each part.
 import json
 import re
 
-from agent import (
-    ANTHROPIC_MODEL,
-    MAX_TOKENS,
-    TOP_K,
-    _get_client,
-    retrieve_chunks,
-)
+import progress
+from agent import MAX_TOKENS, TOP_K, retrieve_chunks
 from prompts import STUDY_GUIDE_SYSTEM_PROMPT, build_study_guide_prompt
 
 # Sections shorter than this are headings, stray list items, or the blank line
@@ -120,14 +115,18 @@ def split_sections(notes: str) -> list[str]:
     return sections
 
 
-def retrieve_for_notes(study_space_id: str, sections: list[str]) -> list[dict]:
+def retrieve_for_notes(
+    study_space_id: str, sections: list[str], report: progress.Report = progress.ignore
+) -> list[dict]:
     """Union of the per-section retrievals, deduped by chunk id.
 
     Order is by best score across the sections that matched a chunk, so if the
     prompt has to be trimmed the excerpts that survive are the strongest ones.
     """
     best: dict[str, dict] = {}
-    for section in sections[:MAX_RETRIEVED_SECTIONS]:
+    searched = sections[:MAX_RETRIEVED_SECTIONS]
+    for i, section in enumerate(searched):
+        progress.retrieval_step(report, i, len(searched))
         for chunk in retrieve_chunks(study_space_id, section):
             seen = best.get(chunk["id"])
             if seen is None or chunk["score"] > seen["score"]:
@@ -177,45 +176,44 @@ def _validate_guide(result: dict, chunks: list[dict]) -> dict:
     }
 
 
-def call_llm(notes: str, chunks: list[dict]) -> dict:
-    response = _get_client().beta.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=MAX_TOKENS,
+def call_llm(
+    notes: str, chunks: list[dict], report: progress.Report = progress.ignore
+) -> dict:
+    # Streamed so the editor can show it moving — see progress.py. A policy
+    # decline is still re-run on the recommended fallback, as agent.call_llm
+    # does; course notes rarely trip this, but a biology or security course can.
+    text, stop_reason = progress.stream_structured(
         system=STUDY_GUIDE_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": build_study_guide_prompt(notes, chunks)}],
-        output_config={"format": {"type": "json_schema", "schema": GUIDE_SCHEMA}},
-        # Same reasoning as agent.call_llm: a policy decline is re-run on the
-        # recommended fallback rather than coming back as a refusal. Course
-        # notes rarely trip this, but a biology or security course can.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
+        content=build_study_guide_prompt(notes, chunks),
+        schema=GUIDE_SCHEMA,
+        report=report,
+        expected=progress.expected_chars(notes, per_note_char=2.0, floor=6000, ceiling=40000),
     )
 
-    if response.stop_reason == "refusal":
+    if stop_reason == "refusal":
         raise RuntimeError("Model declined to write a guide for these notes")
-    if response.stop_reason == "max_tokens":
+    if stop_reason == "max_tokens":
         raise RuntimeError(f"Response hit max_tokens ({MAX_TOKENS}) before finishing")
 
-    text = next((b.text for b in response.content if b.type == "text"), None)
     if text is None:
-        raise ValueError(
-            f"No text block in response (stop_reason={response.stop_reason!r})"
-        )
+        raise ValueError(f"No text block in response (stop_reason={stop_reason!r})")
     return _validate_guide(json.loads(text), chunks)
 
 
-def generate(study_space_id: str, notes: str) -> tuple[dict, list[dict]]:
+def generate(
+    study_space_id: str, notes: str, report: progress.Report = progress.ignore
+) -> tuple[dict, list[dict]]:
     """One guide. Returns it with the chunks it was given, so callers that
     want to score the grounding (eval/run_eval.py) can see both."""
     sections = split_sections(notes)
     if not sections:
         raise EmptyNotesError("There are no notes in this document yet.")
 
-    chunks = retrieve_for_notes(study_space_id, sections)
+    chunks = retrieve_for_notes(study_space_id, sections, report)
     if not chunks:
         raise EmptyNotesError(
             "No source material has been ingested for this study space yet, "
             "so there is nothing to ground a guide in."
         )
 
-    return call_llm(notes, chunks), chunks
+    return call_llm(notes, chunks, report), chunks
