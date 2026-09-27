@@ -21,7 +21,13 @@ from auth import CurrentUser
 from authz import require_document
 from database import get_db
 from models import FlashcardSet
-from schemas import CreateFlashcards, FlashcardsOut, FlashcardsStatusOut
+from generation_progress import progress_for
+from schemas import (
+    CreateFlashcards,
+    FlashcardsOut,
+    FlashcardsProgressOut,
+    FlashcardsStatusOut,
+)
 
 # Flipped once the table has been seen, and never checked again. The status
 # endpoint is polled by every open editor, and a schema that has grown a table
@@ -126,7 +132,7 @@ def create_flashcards(
     return deck
 
 
-@router.get("/{document_id}/flashcards", response_model=FlashcardsStatusOut)
+@router.get("/{document_id}/flashcards", response_model=FlashcardsProgressOut)
 def get_flashcards_status(
     document_id: uuid.UUID, user: CurrentUser, db: Session = Depends(get_db)
 ):
@@ -140,7 +146,10 @@ def get_flashcards_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No flashcards have been generated for this document yet.",
         )
-    return deck
+    return FlashcardsProgressOut(
+        **FlashcardsStatusOut.model_validate(deck).model_dump(),
+        **progress_for(db, "flashcard_sets", deck.id),
+    )
 
 
 @router.get("/{document_id}/flashcards/content", response_model=FlashcardsOut)
