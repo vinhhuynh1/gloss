@@ -37,6 +37,7 @@ from psycopg.types.json import Jsonb
 import chat
 import flashcards
 import make_notes
+import progress
 import study_guide
 from agent import check_passage, cited_chunk
 from embeddings import embed_batch
@@ -451,6 +452,70 @@ def flashcards_available(conn) -> bool:
         return bool(cur.fetchone()[0])
 
 
+def progress_available(conn) -> bool:
+    """Do study_guides and flashcard_sets have the progress columns (012)?
+
+    Checked once at startup, like the table guards above. Without them the
+    worker writes guides and decks exactly as before, just with no progress
+    for the editor to show — a deploy ahead of its migration costs the bar
+    and nothing else.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name IN ('study_guides', 'flashcard_sets')
+               AND column_name IN ('progress', 'stage')
+            """
+        )
+        return cur.fetchone()[0] == 4
+
+
+# Set by run() from progress_available(). Module-level because the process_*
+# functions are also called directly by tests, which never run the check.
+_progress_on = False
+
+# One write a second at most. The editor polls every two.
+PROGRESS_WRITE_SECONDS = 1.0
+
+_PROGRESS_TABLES = ("study_guides", "flashcard_sets")
+
+
+def _progress_reporter(conn, table: str, row_id, attempts: int) -> progress.Report:
+    """A progress.Report that writes to this claimed row.
+
+    Each write also renews claimed_at: a long guide on a slow model is still
+    being worked on, and should not look stale to another worker's sweep.
+    Guarded by the claim token like every other write, and silent when the
+    columns are missing.
+    """
+    assert table in _PROGRESS_TABLES  # interpolated below; never user input
+    last = {"at": 0.0, "stage": None, "percent": -1}
+
+    def report(stage: str, percent: int) -> None:
+        if not _progress_on:
+            return
+        now = time.monotonic()
+        changed_stage = stage != last["stage"]
+        if not changed_stage and (
+            percent <= last["percent"] or now - last["at"] < PROGRESS_WRITE_SECONDS
+        ):
+            return
+        last.update(at=now, stage=stage, percent=percent)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE {table}
+                   SET progress = %s, stage = %s, claimed_at = now()
+                 WHERE id = %s AND attempts = %s AND status = 'processing'
+                """,
+                (max(0, min(99, percent)), stage, row_id, attempts),
+            )
+
+    return report
+
+
 def reclaim_stale_flashcards(conn) -> int:
     """Same as reclaim_stale, for the flashcard queue."""
     with conn.cursor() as cur:
@@ -524,9 +589,11 @@ def process_flashcard_set(conn, row) -> bool:
     """Generate one deck for a claimed row. Returns True on success."""
     set_id, study_space_id, notes, attempts = row
     print(f"Writing flashcards {set_id}")
+    report = _progress_reporter(conn, "flashcard_sets", set_id, attempts)
+    report(progress.STAGE_STARTING, 2)
 
     try:
-        deck, _chunks = flashcards.generate(str(study_space_id), notes)
+        deck, _chunks = flashcards.generate(str(study_space_id), notes, report)
     except study_guide.EmptyNotesError as exc:
         # Nothing to write from, and nothing a retry would change.
         _fail_flashcard_set(conn, set_id, attempts, str(exc), retry=False)
@@ -928,9 +995,11 @@ def process_study_guide(conn, row) -> bool:
     """Generate one guide for a claimed row. Returns True on success."""
     guide_id, study_space_id, notes, attempts = row
     print(f"Writing study guide {guide_id}")
+    report = _progress_reporter(conn, "study_guides", guide_id, attempts)
+    report(progress.STAGE_STARTING, 2)
 
     try:
-        guide, _chunks = study_guide.generate(str(study_space_id), notes)
+        guide, _chunks = study_guide.generate(str(study_space_id), notes, report)
     except study_guide.EmptyNotesError as exc:
         # Nothing to write from, and nothing a retry would change.
         _fail_study_guide(conn, guide_id, attempts, str(exc), retry=False)
@@ -1023,6 +1092,14 @@ def run(once: bool = False):
             print("         infra/supabase/011_lockdown.sql on Supabase, then")
             print("         restart this worker. Everything else is "
                   "unaffected.")
+
+        global _progress_on
+        _progress_on = progress_available(conn)
+        if not _progress_on:
+            print("NOTE: no progress columns on study_guides/flashcard_sets — "
+                  "guides and decks run without a progress bar. Apply")
+            print("      infra/migrations/012_generation_progress.sql and "
+                  "restart this worker to turn it on.")
 
         cards_on = flashcards_available(conn)
         if not cards_on:
