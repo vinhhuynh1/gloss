@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
-import { SOURCE_ACCEPT, SOURCES_CHANGED_EVENT } from "../lib/sources";
+import { SOURCE_ACCEPT, SOURCES_CHANGED_EVENT, attachSourceToChat } from "../lib/sources";
 import type { Source } from "../lib/types";
 import ConfirmDialog from "./ConfirmDialog";
 import RowMenu from "./RowMenu";
 import {
+  IconAgent,
   IconDelete,
   IconDocument,
   IconEmpty,
@@ -295,6 +296,19 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
                 <RowMenu
                   label={`Actions for ${s.filename}`}
                   items={[
+                    // The way to make notes from a file that was uploaded
+                    // earlier. Make notes is otherwise offered only for a
+                    // file dropped on the chat bar, and a file already here
+                    // had no route to it at all.
+                    ...(s.status === "ready"
+                      ? [
+                          {
+                            label: "Make notes in chat",
+                            icon: <IconAgent size={14} />,
+                            onSelect: () => attachSourceToChat({ id: s.id, filename: s.filename }),
+                          },
+                        ]
+                      : []),
                     ...(s.status === "failed"
                       ? [
                           {
