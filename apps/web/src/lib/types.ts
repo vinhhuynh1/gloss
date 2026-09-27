@@ -135,6 +135,11 @@ export interface StudyGuideStatusRow {
   error: string | null;
   created_at: string;
   finished_at: string | null;
+  /** 0-99 while running, from the status poll only; absent until the
+   * database has migration 012. An estimate while the model is writing. */
+  progress?: number | null;
+  /** What the worker is doing: "Finding source material", "Writing"… */
+  stage?: string | null;
 }
 
 export interface StudyGuideRow extends StudyGuideStatusRow {
@@ -170,6 +175,9 @@ export interface FlashcardsStatusRow {
   error: string | null;
   created_at: string;
   finished_at: string | null;
+  /** See StudyGuideStatusRow. */
+  progress?: number | null;
+  stage?: string | null;
 }
 
 export interface FlashcardsRow extends FlashcardsStatusRow {

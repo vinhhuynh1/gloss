@@ -441,9 +441,11 @@ function Answer({
         )}
         {done && message.kind === "answer" && citations.length > 0 && (
           <div className="chat-notes-actions">
+            {/* The same button notes get, not a link: it is the same act, and
+                two looks for one action read as two different things. */}
             <button
               type="button"
-              className="link-button with-icon"
+              className="with-icon"
               disabled={!canInsert}
               title={canInsert ? undefined : "Open a document to add this answer to it"}
               onClick={() => onInsertAgain(message)}

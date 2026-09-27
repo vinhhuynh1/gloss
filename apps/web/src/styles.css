@@ -4219,3 +4219,39 @@ summary:focus-visible {
 .chat-plan .chat-notes-actions .muted {
   font-size: var(--text-sm);
 }
+
+/* A study guide or deck being written. The label carries the percentage;
+   the bar along the bottom edge is the same number, for a glance. Kept
+   inside the button so the toolbar does not change height or reflow as a
+   job starts and ends. */
+.generate-button.is-running {
+  position: relative;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.generate-button.is-running::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: var(--progress, 0%);
+  background: var(--accent);
+  transition: width 0.6s var(--ease);
+}
+
+/* Queued has no percentage: a slow pulse says "waiting", not "stuck at 0". */
+.generate-button.is-queued {
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generate-button.is-running::after {
+    transition: none;
+  }
+
+  .generate-button.is-queued {
+    animation: none;
+  }
+}

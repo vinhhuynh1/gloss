@@ -206,6 +206,18 @@ class StudyGuideStatusOut(ORMModel):
     finished_at: datetime | None
 
 
+class StudyGuideProgressOut(StudyGuideStatusOut):
+    """The status poll's answer, with how far along a running guide is.
+
+    Separate from StudyGuideStatusOut, which POST also returns, because these
+    two come from columns the API reads only once 012 is applied — see
+    generation_progress.py. Absent (null) until then.
+    """
+
+    progress: int | None = None  # 0-99 while running; an estimate while writing
+    stage: str | None = None
+
+
 class StudyGuideOut(StudyGuideStatusOut):
     """The finished guide, fetched once after the poll reports 'done'.
 
@@ -243,6 +255,13 @@ class FlashcardsStatusOut(ORMModel):
     error: str | None
     created_at: datetime
     finished_at: datetime | None
+
+
+class FlashcardsProgressOut(FlashcardsStatusOut):
+    """Same as StudyGuideProgressOut, for decks."""
+
+    progress: int | None = None
+    stage: str | None = None
 
 
 class FlashcardsOut(FlashcardsStatusOut):
