@@ -41,7 +41,12 @@ import {
   IconMoveUp,
   IconSend,
 } from "./Icon";
-import { SOURCE_ACCEPT, uploadSource } from "../lib/sources";
+import {
+  ATTACH_SOURCE_EVENT,
+  SOURCE_ACCEPT,
+  uploadSource,
+  type AttachSourceDetail,
+} from "../lib/sources";
 import { useChat } from "../lib/useChat";
 import type { ChatCitation, ChatMessage, NotesMode, OutlineSection } from "../lib/types";
 
@@ -434,6 +439,21 @@ function Answer({
             {shown.excerpt}
           </blockquote>
         )}
+        {done && message.kind === "answer" && citations.length > 0 && (
+          <div className="chat-notes-actions">
+            <button
+              type="button"
+              className="link-button with-icon"
+              disabled={!canInsert}
+              title={canInsert ? undefined : "Open a document to add this answer to it"}
+              onClick={() => onInsertAgain(message)}
+            >
+              <IconDocument size={14} />
+              Insert into notes
+            </button>
+            {insertState.error && <span className="error">{insertState.error}</span>}
+          </div>
+        )}
         {done && isNotes && (
           <div className="chat-notes-actions">
             {message.applied_at ? (
@@ -626,6 +646,23 @@ export default function ChatDock({
     setAttachments([]);
     setDropError(null);
   }, [spaceId]);
+
+  // "Make notes in chat" from the Sources panel: the file is already
+  // uploaded, so it joins the bar ready, once, and the chat opens on it.
+  useEffect(() => {
+    const onAttach = (e: Event) => {
+      const { id, filename } = (e as CustomEvent<AttachSourceDetail>).detail;
+      setAttachments((prev) =>
+        prev.some((a) => a.sourceId === id)
+          ? prev
+          : [...prev, { key: `source-${id}`, name: filename, state: "uploaded", sourceId: id }]
+      );
+      setOpen(true);
+      input.current?.focus();
+    };
+    window.addEventListener(ATTACH_SOURCE_EVENT, onAttach);
+    return () => window.removeEventListener(ATTACH_SOURCE_EVENT, onAttach);
+  }, []);
 
   function addFiles(files: File[]) {
     setDropError(null);

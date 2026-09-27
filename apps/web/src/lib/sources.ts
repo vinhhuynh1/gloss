@@ -11,6 +11,21 @@ import type { Source } from "./types";
 
 export const SOURCES_CHANGED_EVENT = "gloss:sources-changed";
 
+/** "Make notes in chat" on a source that is already uploaded: puts it in the
+ * chat bar as if it had just been dropped there, where Make notes and the
+ * Plan/Auto choice live. An event rather than a prop because SourcesPanel and
+ * the chat sit in different branches of the page. */
+export const ATTACH_SOURCE_EVENT = "gloss:attach-source";
+
+export interface AttachSourceDetail {
+  id: string;
+  filename: string;
+}
+
+export function attachSourceToChat(detail: AttachSourceDetail) {
+  window.dispatchEvent(new CustomEvent<AttachSourceDetail>(ATTACH_SOURCE_EVENT, { detail }));
+}
+
 /** Matches ACCEPT in SourcesPanel and ALLOWED_EXTENSIONS in the API. */
 export const SOURCE_ACCEPT = ".pdf,.pptx,.md,.markdown,.txt";
 
