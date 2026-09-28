@@ -16,7 +16,7 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-from embeddings import embed
+from embeddings import embed, embed_batch
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -41,25 +41,42 @@ def search(study_space_id: str, query: str, top_k: int = DEFAULT_TOP_K) -> list[
     whether the material covers the question at all, and the raw ranking hides
     that distinction completely.
     """
-    query_embedding = embed(query)
     with psycopg.connect(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT sc.id,
-                       sc.text,
-                       sc.page_ref,
-                       s.filename,
-                       1 - (sc.embedding <=> %s::vector) AS score
-                  FROM source_chunks sc
-                  JOIN sources s ON s.id = sc.source_id
-                 WHERE s.study_space_id = %s
-                 ORDER BY sc.embedding <=> %s::vector
-                 LIMIT %s
-                """,
-                (str(query_embedding), study_space_id, str(query_embedding), top_k),
-            )
-            rows = cur.fetchall()
+        return _query(conn, study_space_id, embed(query), top_k)
+
+
+def search_many(study_space_id: str, queries: list[str], top_k: int = DEFAULT_TOP_K) -> list[list[dict]]:
+    """search() for several queries at once: one embedding batch and one
+    connection, rather than a model call and a fresh connection per query.
+    A study guide searches once per section of the notes, and against a remote
+    database the connection handshakes alone were seconds of the wait.
+
+    The same SQL as search(), so the two cannot drift apart."""
+    if not queries:
+        return []
+    vectors = embed_batch(queries)
+    with psycopg.connect(DATABASE_URL) as conn:
+        return [_query(conn, study_space_id, v, top_k) for v in vectors]
+
+
+def _query(conn, study_space_id: str, query_embedding: list[float], top_k: int) -> list[dict]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sc.id,
+                   sc.text,
+                   sc.page_ref,
+                   s.filename,
+                   1 - (sc.embedding <=> %s::vector) AS score
+              FROM source_chunks sc
+              JOIN sources s ON s.id = sc.source_id
+             WHERE s.study_space_id = %s
+             ORDER BY sc.embedding <=> %s::vector
+             LIMIT %s
+            """,
+            (str(query_embedding), study_space_id, str(query_embedding), top_k),
+        )
+        rows = cur.fetchall()
 
     return [
         {

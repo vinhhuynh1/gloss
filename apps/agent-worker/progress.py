@@ -78,7 +78,13 @@ def stream_structured(
         max_tokens=MAX_TOKENS,
         system=system,
         messages=[{"role": "user", "content": content}],
-        output_config={"format": {"type": "json_schema", "schema": schema}},
+        # medium rather than the default high: the job is to organise excerpts
+        # it is handed, not to reason out anything new, and at high effort the
+        # thinking before the first byte of JSON was most of the wait.
+        output_config={
+            "format": {"type": "json_schema", "schema": schema},
+            "effort": "medium",
+        },
         # Same reasoning as agent.call_llm: a policy decline is re-run on the
         # recommended fallback rather than coming back as a refusal.
         betas=["server-side-fallback-2026-07-01"],
