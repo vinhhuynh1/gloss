@@ -41,6 +41,7 @@ import {
   IconMoveUp,
   IconSend,
 } from "./Icon";
+import Orb from "./Orb";
 import {
   ATTACH_SOURCE_EVENT,
   SOURCE_ACCEPT,
@@ -72,6 +73,11 @@ function saveMode(mode: NotesMode) {
 
 /** Matches MAX_CHAT_CHARS in apps/api/schemas.py. */
 const MAX_CHARS = 2000;
+
+/** How long after the last keystroke the chat bar stops listening. Long
+ * enough to bridge the pause between words, short enough that it has settled
+ * by the time the hand reaches for Enter. */
+const TYPING_IDLE_MS = 1200;
 
 /** Matches MAX_NOTES_SOURCES and MAX_NOTES_CHARS in apps/api/schemas.py. */
 const MAX_NOTES_FILES = 5;
@@ -260,7 +266,7 @@ function PlanCard({
     <div className={`chat-plan${approved ? " is-approved" : ""}`}>
       <p className="chat-plan-lead">
         {approved
-          ? "Plan approved — the notes are below."
+          ? "Plan approved. The notes are below."
           : "Here's the plan. Untick what you don't need, reorder or rename sections, then write the notes."}
       </p>
       <ol className="chat-plan-list">
@@ -386,8 +392,11 @@ function Answer({
     // 'pending' covers waiting for the worker and waiting for uploads in this
     // space to finish processing; the worker holds an answer back until they
     // have, so it is never answered from half the material.
+    const activity =
+      message.status === "pending" ? "queued" : isNotes || isPlan ? "reading" : "thinking";
     content = (
       <p className="chat-thinking" aria-live="polite">
+        <Orb activity={activity} />
         {progress ??
           (message.status === "pending"
             ? "Waiting to answer…"
@@ -406,6 +415,7 @@ function Answer({
         }`}
       >
         <RichText body={message.body} citations={citations} onCite={toggle} />
+        {message.status === "processing" && <Orb activity="writing" className="chat-writing" />}
       </div>
     );
   }
@@ -524,6 +534,8 @@ export default function ChatDock({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [typing, setTyping] = useState(false);
+  const typingTimer = useRef<number | undefined>(undefined);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
@@ -729,6 +741,17 @@ export default function ChatDock({
     }
   }
 
+  // The timer outlives the keystroke that set it; clear it on unmount so it
+  // cannot set state on a dock that has gone.
+  useEffect(() => () => window.clearTimeout(typingTimer.current), []);
+
+  function onDraftChange(value: string) {
+    setDraft(value);
+    setTyping(value.trim() !== "");
+    window.clearTimeout(typingTimer.current);
+    typingTimer.current = window.setTimeout(() => setTyping(false), TYPING_IDLE_MS);
+  }
+
   function onInputKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     // Enter sends, Shift+Enter is a new line — the chat convention, and the
     // one thing people try first. Not while an IME is composing a character.
@@ -805,7 +828,14 @@ export default function ChatDock({
                   void loadEarlier();
                 }}
               >
-                {loadingEarlier ? "Loading…" : "Show earlier messages"}
+                {loadingEarlier ? (
+                  <>
+                    <Orb activity="busy" />
+                    Loading…
+                  </>
+                ) : (
+                  "Show earlier messages"
+                )}
               </button>
             )}
 
@@ -876,6 +906,7 @@ export default function ChatDock({
                 <IconDocument size={14} />
                 <span className="chat-attachment-name">{a.name}</span>
                 <span className="chat-attachment-state">
+                  {a.state === "uploading" && <Orb activity="uploading" />}
                   {a.state === "uploading" ? "Uploading…" : a.state === "failed" ? "Failed" : ""}
                 </span>
                 <button
@@ -957,9 +988,14 @@ export default function ChatDock({
             placeholder={placeholder}
             aria-label="Ask about your sources"
             onFocus={() => setOpen(true)}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => onDraftChange(e.target.value)}
             onKeyDown={onInputKey}
           />
+          {/* A fixed slot, filled only while you type, so the textarea does
+              not shift sideways every time the orb comes and goes. */}
+          <span className="chat-listening">
+            {typing && <Orb activity="listening" />}
+          </span>
           <button
             type="submit"
             className="chat-send"

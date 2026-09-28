@@ -118,7 +118,7 @@ export default function EditorToolbar({ editor }: { editor: Editor | null }) {
     ],
     [
       {
-        title: "Undo (Ctrl+Z) — your own edits only",
+        title: "Undo (Ctrl+Z), your own edits only",
         Icon: IconUndo,
         run: () => editor.chain().focus().undo().run(),
         enabled: () => editor.can().undo(),

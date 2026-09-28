@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../lib/api";
-import { SOURCE_ACCEPT, SOURCES_CHANGED_EVENT, attachSourceToChat } from "../lib/sources";
+import {
+  SOURCE_ACCEPT,
+  SOURCES_CHANGED_EVENT,
+  attachSourceToChat,
+  uploadSource,
+} from "../lib/sources";
 import type { Source } from "../lib/types";
 import ConfirmDialog from "./ConfirmDialog";
+import Orb from "./Orb";
 import RowMenu from "./RowMenu";
 import {
   IconAgent,
   IconDelete,
+  IconDismiss,
   IconDocument,
   IconEmpty,
   IconFilePdf,
@@ -34,6 +41,17 @@ function formatSize(bytes: number | null): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** A file on its way up. Kept until the POST answers, and kept after a
+ * failed one: the File is still in memory, so Retry can send it again
+ * without asking for the file a second time. Once the POST succeeds the row
+ * is replaced by the real source. */
+interface Upload {
+  key: string;
+  file: File;
+  state: "uploading" | "failed";
+  error?: string;
 }
 
 function isSettled(source: Source): boolean {
@@ -63,12 +81,17 @@ function statusLabel(s: Source): string {
   }
 }
 
+function SourceMark({ filename }: { filename: string }) {
+  const Mark = filename.toLowerCase().endsWith(".pdf") ? IconFilePdf : IconDocument;
+  return <Mark className="source-icon" />;
+}
+
 export default function SourcesPanel({ spaceId }: { spaceId: string }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  /** Files over the zone, or 0 when nothing is being dragged. */
+  const [dragCount, setDragCount] = useState(0);
   /** The source the remove dialog is asking about, if it is open. */
   const [pendingRemove, setPendingRemove] = useState<Source | null>(null);
   // Counted rather than a boolean: dragenter/dragleave also fire as the
@@ -131,26 +154,39 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
     return () => window.removeEventListener(SOURCES_CHANGED_EVENT, onChanged);
   }, []);
 
-  async function upload(file: File) {
-    setUploading(true);
-    setError(null);
+  async function send(key: string, file: File) {
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const created = await apiFetch<Source>(`/study-spaces/${spaceId}/sources`, {
-        method: "POST",
-        body,
-      });
+      // uploadSource announces the change, which restarts the poll above.
+      const created = await uploadSource(spaceId, file);
+      setUploads((prev) => prev.filter((u) => u.key !== key));
       // Shown immediately as "Queued" rather than waiting for the next poll,
       // so the file appears the instant the upload returns.
-      setSources((prev) => [created, ...prev]);
-      setPollToken((t) => t + 1);
+      setSources((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileInput.current) fileInput.current.value = "";
+      const error = err instanceof Error ? err.message : "Upload failed";
+      setUploads((prev) =>
+        prev.map((u) => (u.key === key ? { ...u, state: "failed", error } : u))
+      );
     }
+  }
+
+  // Each file goes up on its own, so one refused file does not take the rest
+  // of a multi-file drop down with it.
+  function upload(files: File[]) {
+    const added: Upload[] = files.map((file) => ({
+      key: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
+      file,
+      state: "uploading",
+    }));
+    setUploads((prev) => [...added, ...prev]);
+    for (const u of added) void send(u.key, u.file);
+  }
+
+  function retryUpload(u: Upload) {
+    setUploads((prev) =>
+      prev.map((x) => (x.key === u.key ? { ...x, state: "uploading", error: undefined } : x))
+    );
+    void send(u.key, u.file);
   }
 
   async function retry(id: string) {
@@ -182,11 +218,12 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     dragDepth.current = 0;
-    setDragging(false);
-    if (uploading) return;
-    const file = e.dataTransfer.files?.[0];
-    if (file) void upload(file);
+    setDragCount(0);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length > 0) upload(files);
   }
+
+  const uploading = uploads.some((u) => u.state === "uploading");
 
   return (
     <aside className="sources-panel">
@@ -202,34 +239,42 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
           removes the step where someone drags a file onto the panel, watches
           nothing happen, and goes looking for a button. */}
       <label
-        className={`upload-zone${dragging ? " is-dragging" : ""}${
-          uploading ? " is-busy" : ""
-        }`}
+        className={`upload-zone${dragCount > 0 ? " is-dragging" : ""}`}
         onDragEnter={(e) => {
           e.preventDefault();
           dragDepth.current += 1;
-          setDragging(true);
+          // How many items are coming is known before the drop, their names
+          // are not — enough to say what is about to happen.
+          setDragCount(Math.max(1, e.dataTransfer.items.length));
         }}
         onDragOver={(e) => e.preventDefault()}
         onDragLeave={() => {
           dragDepth.current -= 1;
-          if (dragDepth.current <= 0) setDragging(false);
+          if (dragDepth.current <= 0) setDragCount(0);
         }}
         onDrop={onDrop}
       >
+        {/* Not disabled while uploading: each file is its own row now, so
+            more can be added while the first ones are still going up. */}
         <input
-          ref={fileInput}
           type="file"
           accept={ACCEPT}
-          disabled={uploading}
+          multiple
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void upload(file);
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 0) upload(files);
+            e.target.value = "";
           }}
         />
         <IconUploadCloud className="upload-mark" size={20} />
         <span className="upload-label">
-          {uploading ? "Uploading…" : "Drop a file or browse"}
+          {dragCount > 1
+            ? `Drop ${dragCount} files`
+            : dragCount === 1
+              ? "Drop to upload"
+              : uploading
+                ? "Uploading…"
+                : "Drop files or browse"}
         </span>
         <span className="upload-hint">PDF, PowerPoint, Markdown or text</span>
       </label>
@@ -246,7 +291,7 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
       {/* The explanation lives in the empty state rather than above the list
           for good. It is onboarding copy — read once, then two lines of grey
           sitting on top of the answer it was explaining. */}
-      {sources.length === 0 && !error && (
+      {sources.length === 0 && uploads.length === 0 && !error && (
         <div className="panel-empty">
           <IconEmpty className="panel-empty-mark" size={22} />
           <p className="panel-empty-title">No sources yet</p>
@@ -273,26 +318,82 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
       )}
 
       <ul className="source-list">
-        {sources.map((s) => {
-          const isPdf = s.filename.toLowerCase().endsWith(".pdf");
-          const Mark = isPdf ? IconFilePdf : IconDocument;
-          return (
-            <li key={s.id} className={`source-card source-${s.status}`}>
-              <Mark className="source-icon" />
-              <div className="source-text">
-                <span className="source-name" title={s.filename}>
-                  {s.filename}
-                </span>
-                <span className="source-meta">
+        {uploads.map((u) => (
+          <li
+            key={u.key}
+            className={`source-card is-upload ${
+              u.state === "failed" ? "source-failed" : "source-uploading"
+            }`}
+          >
+            <SourceMark filename={u.file.name} />
+            <div className="source-text">
+              <span className="source-name" title={u.file.name}>
+                {u.file.name}
+              </span>
+              <span className="source-meta">
+                {u.state === "failed" ? (
                   <span className="source-dot" aria-hidden="true" />
-                  {statusLabel(s)}
-                </span>
+                ) : (
+                  <Orb activity="uploading" />
+                )}
+                {u.state === "failed"
+                  ? "Upload failed"
+                  : `Uploading · ${formatSize(u.file.size)}`}
+              </span>
+            </div>
+            {u.state === "failed" ? (
+              <div className="source-actions">
+                <button type="button" className="source-retry" onClick={() => retryUpload(u)}>
+                  <IconRestart size={13} />
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="icon-button is-small"
+                  aria-label={`Dismiss ${u.file.name}`}
+                  onClick={() => setUploads((prev) => prev.filter((x) => x.key !== u.key))}
+                >
+                  <IconDismiss size={14} />
+                </button>
               </div>
+            ) : null}
+            {u.error && <p className="source-error">{u.error}</p>}
+          </li>
+        ))}
 
-              {/* The same menu the document rail uses. A bare "Remove" button
-                  inside the card was the loudest thing in it, which is the
-                  wrong emphasis for the one action that cannot be undone. */}
-              {isSettled(s) && (
+        {sources.map((s) => (
+          <li key={s.id} className={`source-card source-${s.status}`}>
+            <SourceMark filename={s.filename} />
+            <div className="source-text">
+              <span className="source-name" title={s.filename}>
+                {s.filename}
+              </span>
+              <span className="source-meta">
+                {/* The dot says a settled state; the orb says one still moving. */}
+                {isSettled(s) ? (
+                  <span className="source-dot" aria-hidden="true" />
+                ) : (
+                  <Orb activity={s.status === "pending" ? "queued" : "reading"} />
+                )}
+                {statusLabel(s)}
+              </span>
+            </div>
+
+            {isSettled(s) && (
+              <div className="source-actions">
+                {/* Retry sits on the row rather than in the menu: it is the
+                    one thing to do with a failed file, and the menu hid it. */}
+                {s.status === "failed" && (
+                  <button type="button" className="source-retry" onClick={() => void retry(s.id)}>
+                    <IconRestart size={13} />
+                    Retry
+                  </button>
+                )}
+
+                {/* The same menu the document rail uses. A bare "Remove"
+                    button inside the card was the loudest thing in it, which
+                    is the wrong emphasis for the one action that cannot be
+                    undone. */}
                 <RowMenu
                   label={`Actions for ${s.filename}`}
                   items={[
@@ -309,15 +410,6 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
                           },
                         ]
                       : []),
-                    ...(s.status === "failed"
-                      ? [
-                          {
-                            label: "Retry",
-                            icon: <IconRestart size={14} />,
-                            onSelect: () => void retry(s.id),
-                          },
-                        ]
-                      : []),
                     {
                       label: "Remove",
                       icon: <IconDelete size={14} />,
@@ -326,14 +418,12 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
                     },
                   ]}
                 />
-              )}
+              </div>
+            )}
 
-              {s.status === "failed" && s.error && (
-                <p className="source-error">{s.error}</p>
-              )}
-            </li>
-          );
-        })}
+            {s.status === "failed" && s.error && <p className="source-error">{s.error}</p>}
+          </li>
+        ))}
       </ul>
     </aside>
   );
