@@ -7,7 +7,7 @@ retrieval would quietly return nonsense rather than failing loudly — one of
 the nastier bugs to notice in a RAG pipeline, because everything still
 "works," it just returns irrelevant chunks.
 """
-from functools import lru_cache
+import threading
 
 from sentence_transformers import SentenceTransformer
 
@@ -18,11 +18,22 @@ MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 
 
-@lru_cache(maxsize=1)
+_loaded: SentenceTransformer | None = None
+_load_lock = threading.Lock()
+
+
 def _model() -> SentenceTransformer:
     """Loaded lazily and cached in memory. The first call downloads ~90MB
-    of model weights and takes a few seconds; every call after reuses it."""
-    return SentenceTransformer(MODEL_NAME)
+    of model weights and takes a few seconds; every call after reuses it.
+
+    Locked because worker.py runs its queues on separate threads, and two of
+    them reaching for the model at once would otherwise load it twice."""
+    global _loaded
+    if _loaded is None:
+        with _load_lock:
+            if _loaded is None:
+                _loaded = SentenceTransformer(MODEL_NAME)
+    return _loaded
 
 
 def embed(text: str) -> list[float]:

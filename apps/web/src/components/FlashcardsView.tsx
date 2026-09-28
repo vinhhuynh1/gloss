@@ -19,9 +19,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Deck } from "../lib/types";
-import { IconNext, IconPrev, IconRestart } from "./Icon";
+import { IconDismiss, IconNext, IconPrev, IconRestart } from "./Icon";
 
 type Mode = "review" | "quiz";
+
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      className="icon-button"
+      aria-label="Close flashcards"
+      title="Close (Esc)"
+      onClick={onClose}
+    >
+      <IconDismiss />
+    </button>
+  );
+}
 
 export default function FlashcardsView({
   deck,
@@ -104,9 +117,8 @@ export default function FlashcardsView({
     return (
       <div className="flashcards">
         <div className="flashcards-actions">
-          <button className="link-button" onClick={onClose}>
-            Back to notes
-          </button>
+          <span />
+          <CloseButton onClose={onClose} />
         </div>
         <p className="muted">This deck came back empty.</p>
       </div>
@@ -134,9 +146,7 @@ export default function FlashcardsView({
             Quiz
           </button>
         </div>
-        <button className="link-button" onClick={onClose}>
-          Back to notes
-        </button>
+        <CloseButton onClose={onClose} />
       </div>
 
       <h1 className="flashcards-title">{deck.title}</h1>

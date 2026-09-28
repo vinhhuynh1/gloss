@@ -1805,6 +1805,7 @@ summary:focus-visible {
 
 .study-guide-actions {
   display: flex;
+  justify-content: space-between;
   gap: 0.75rem;
   align-items: center;
   margin-bottom: 1.5rem;
@@ -4563,6 +4564,27 @@ summary:focus-visible {
 .chat-writing {
   display: block;
   margin-top: var(--space-2);
+}
+
+/* How long the answer has been going. Tabular so the width does not jitter
+   as the seconds tick over. */
+.chat-elapsed {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.chat-body .chat-elapsed {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+.chat-meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
 
 .chat-cite {

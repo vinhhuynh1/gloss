@@ -14,10 +14,9 @@ group, and Postgres is already a hard dependency of every process. `FOR
 UPDATE SKIP LOCKED` gives the one property that actually matters — two
 workers never claim the same row — in one statement.
 
-Agent requests are claimed before uploads, because someone is looking at a
-"Checking…" chip waiting for the answer. One worker does one thing at a time,
-though, so a long PDF that is already being ingested holds up a check until
-it finishes. Run a second worker if that starts to matter.
+Each queue family runs on its own thread (see run()), so a long PDF being
+ingested or a study guide being written never holds up a check or a chat
+answer that someone is watching.
 
 Run exactly as many of these as you like. Unlike apps/realtime, which must
 stay at one replica, this is safely horizontal.
@@ -25,6 +24,7 @@ stay at one replica, this is safely horizontal.
 import argparse
 import os
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -1067,14 +1067,52 @@ def requeue(conn, study_space_id: str | None) -> int:
         return cur.rowcount
 
 
-def run(once: bool = False):
-    # autocommit: each claim, each result, and each reclaim is its own atomic
-    # act. Wrapping the loop in one transaction would hold the claim invisible
-    # to other workers until the whole batch finished, which defeats the point
-    # of claiming a row at a time.
-    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
-        idle_logged = False
+INTERACTIVE_POLL_SECONDS = float(os.getenv("INTERACTIVE_POLL_SECONDS", "0.5"))
 
+
+def _lane(name: str, jobs, poll: float, once: bool, stop: threading.Event) -> None:
+    """One queue family on its own thread and its own connection.
+
+    jobs is [(reclaim, claim, process)]. Claimed in the order given, and the
+    lane goes back to the top after every job, so the first queue in a lane
+    keeps its priority over the rest of that lane.
+
+    autocommit: each claim, each result, and each reclaim is its own atomic
+    act. Wrapping the loop in one transaction would hold the claim invisible
+    to other workers until the whole batch finished, which defeats the point
+    of claiming a row at a time.
+    """
+    try:
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            while not stop.is_set():
+                reclaimed = sum(reclaim(conn) for reclaim, _claim, _process in jobs)
+                if reclaimed:
+                    print(f"[{name}] Reclaimed {reclaimed} stale claim(s)")
+
+                for _reclaim, claim, process_row in jobs:
+                    row = claim(conn)
+                    if row is not None:
+                        process_row(conn, row)
+                        break
+                else:
+                    if once:
+                        return
+                    stop.wait(poll)
+    except Exception:
+        # A lane that dies takes its queues with it; stop the rest so the
+        # process exits and the platform restarts it, rather than running on
+        # half-deaf with nothing in the log but this.
+        stop.set()
+        raise
+
+
+def run(once: bool = False):
+    """Each queue family gets its own lane, so a study guide that takes a
+    minute no longer holds up a chat answer, a check, or a deck queued behind
+    it. Claims are FOR UPDATE SKIP LOCKED throughout, which is what already
+    made running several workers safe; lanes are the same thing in-process.
+    """
+    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         guides_on = study_guides_available(conn)
         if not guides_on:
             print("WARNING: no study_guides table — study guides are OFF "
@@ -1093,6 +1131,8 @@ def run(once: bool = False):
             print("         restart this worker. Everything else is "
                   "unaffected.")
 
+        # Set before any lane starts and only read after, so the lanes share
+        # it without a lock.
         global _progress_on
         _progress_on = progress_available(conn)
         if not _progress_on:
@@ -1110,87 +1150,64 @@ def run(once: bool = False):
             print("         restart this worker. Everything else is "
                   "unaffected.")
 
-        while True:
-            reclaimed = reclaim_stale(conn) + reclaim_stale_agent_requests(conn)
-            if guides_on:
-                reclaimed += reclaim_stale_study_guides(conn)
-            if cards_on:
-                reclaimed += reclaim_stale_flashcards(conn)
-            if chat_on:
-                reclaimed += reclaim_stale_chat(conn)
-            if reclaimed:
-                print(f"Reclaimed {reclaimed} stale claim(s)")
+    # Checks first within the interactive lane: someone is waiting on each,
+    # and they are shorter than a chat answer.
+    interactive = [
+        (reclaim_stale_agent_requests, claim_next_agent_request, process_agent_request)
+    ]
+    if chat_on:
+        interactive.append((reclaim_stale_chat, claim_next_chat_answer, process_chat_answer))
 
-            # Agent requests first: someone is waiting on each one.
-            request = claim_next_agent_request(conn)
-            if request is not None:
-                idle_logged = False
-                process_agent_request(conn, request)
-                continue
+    lanes = [
+        ("interactive", interactive, INTERACTIVE_POLL_SECONDS),
+        ("uploads", [(reclaim_stale, claim_next, process)], POLL_INTERVAL_SECONDS),
+    ]
+    if guides_on:
+        lanes.append((
+            "guides",
+            [(reclaim_stale_study_guides, claim_next_study_guide, process_study_guide)],
+            POLL_INTERVAL_SECONDS,
+        ))
+    if cards_on:
+        lanes.append((
+            "flashcards",
+            [(reclaim_stale_flashcards, claim_next_flashcard_set, process_flashcard_set)],
+            POLL_INTERVAL_SECONDS,
+        ))
 
-            # Chat answers level with checks: someone is watching the reply
-            # appear. Checks go first only because they are shorter.
-            answer = claim_next_chat_answer(conn) if chat_on else None
-            if answer is not None:
-                idle_logged = False
-                process_chat_answer(conn, answer)
-                continue
+    stop = threading.Event()
+    threads = [
+        threading.Thread(
+            target=_lane, args=(name, jobs, poll, once, stop), name=name, daemon=True
+        )
+        for name, jobs, poll in lanes
+    ]
+    for thread in threads:
+        thread.start()
 
-            # Guides next. Someone is waiting on these too, but a guide is one
-            # long call where a check is a short one, so letting checks past
-            # keeps the interactive path interactive.
-            guide = claim_next_study_guide(conn) if guides_on else None
-            if guide is not None:
-                idle_logged = False
-                process_study_guide(conn, guide)
-                continue
+    if not once:
+        names = ", ".join(name for name, _jobs, _poll in lanes)
+        off = [
+            name
+            for name, on in (("chat", chat_on), ("guides", guides_on), ("flashcards", cards_on))
+            if not on
+        ]
+        suffix = f" ({', '.join(off)} OFF)" if off else ""
+        print(f"Waiting for work on {len(lanes)} lanes: {names}{suffix}…")
 
-            # Decks after guides. Both are one long call and neither is
-            # interactive, so the order between them only decides who waits
-            # when both are queued; guides came first and keep the seniority.
-            deck = claim_next_flashcard_set(conn) if cards_on else None
-            if deck is not None:
-                idle_logged = False
-                process_flashcard_set(conn, deck)
-                continue
+    try:
+        # join with a timeout so Ctrl-C reaches the main thread on Windows.
+        while any(t.is_alive() for t in threads):
+            for thread in threads:
+                thread.join(timeout=0.5)
+    except KeyboardInterrupt:
+        stop.set()
+        raise
 
-            row = claim_next(conn)
-            if row is not None:
-                idle_logged = False
-                process(conn, row)
-                continue
-
-            if once:
-                print("Queue empty.")
-                return
-            if not idle_logged:
-                # Names what this process will actually pick up, so a queue
-                # that is off for a missing migration is visible in the log
-                # rather than looking like an empty queue.
-                jobs = ["uploads", "checks"]
-                if chat_on:
-                    jobs.append("chat")
-                if guides_on:
-                    jobs.append("guides")
-                if cards_on:
-                    jobs.append("flashcards")
-                off = [
-                    name
-                    for name, on in (
-                        ("chat", chat_on),
-                        ("guides", guides_on),
-                        ("flashcards", cards_on),
-                    )
-                    if not on
-                ]
-                listed = ", ".join(jobs[:-1]) + " and " + jobs[-1]
-                suffix = f" ({', '.join(off)} OFF)" if off else ""
-                print(
-                    f"Waiting for {listed}{suffix} "
-                    f"(polling every {POLL_INTERVAL_SECONDS}s)…"
-                )
-                idle_logged = True
-            time.sleep(POLL_INTERVAL_SECONDS)
+    if once:
+        print("Queue empty.")
+    elif stop.is_set():
+        sys.exit("A worker lane stopped unexpectedly; see the traceback above.")
 
 
 def main():
