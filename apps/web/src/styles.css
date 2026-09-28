@@ -714,8 +714,17 @@ h3,
   min-height: 100vh;
   min-height: 100dvh;
   padding: 1rem;
+  position: relative;
   background: var(--neu-base);
   --ring-gap: var(--neu-base);
+}
+
+/* Where the header puts it on every other page. Here, before signing in, is
+   where someone first finds the screen too bright or too dark. */
+.login-theme {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
 }
 
 /* The disc, with the one line about what Gloss is underneath it. */
@@ -4566,10 +4575,9 @@ summary:focus-visible {
   margin-top: var(--space-2);
 }
 
-/* How long the answer has been going. Tabular so the width does not jitter
-   as the seconds tick over. */
+/* How long the answer has been going, right after what it is doing.
+   Tabular so the width does not jitter as the seconds tick over. */
 .chat-elapsed {
-  margin-left: auto;
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
