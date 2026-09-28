@@ -37,6 +37,8 @@ export default function ThemeToggle() {
 
   return (
     <button
+      // Not a submit: on the sign-in screen it sits inside the form.
+      type="button"
       className="icon-button"
       onClick={() => setTheme(next)}
       title={`Theme: ${FACE[theme].label}. Switch to ${FACE[next].label}`}
