@@ -143,10 +143,10 @@
   --text: #1b1a17;
   --text-soft: #5e5a52;
   --text-muted: #6f6a61;
-  /* A hairline, deliberately near-invisible: structure should be felt rather
-     than drawn. --border-strong is for the rare edge that must be seen. */
-  --border: #ebe8e1;
-  --border-strong: #d9d4ca;
+  /* A visible hairline: every component edge reads at a glance. --border-strong
+     is for the edge that must hold its own against a tinted surface. */
+  --border: #dcd8cf;
+  --border-strong: #c4beb2;
 
   /* Primary actions are ink. The accent tokens exist for the agent, which is
      the only thing in the product that is *not* a person. */
@@ -171,7 +171,7 @@
 
   --accent: #8a3f74;
   --on-accent: var(--on-color);
-  --accent-border: #e8cfe0;
+  --accent-border: #dcb6cf;
   --accent-tint: #f8eef5;
   --accent-tint-hover: #f2e2ed;
   --accent-text: #74325f;
@@ -192,7 +192,7 @@
   --warn-amber: #cf9414;
   --warn-tint: #fdf4e3;
   --warn-tint-soft: #fefaf2;
-  --warn-border: #eddcb8;
+  --warn-border: #e2c998;
   --warn-text: #7d5507;
   --warn-strong: #a8720a;
 
