@@ -522,9 +522,9 @@ export default function SpacePage({
   }, [openEditor]);
 
   const insertIntoOpenDocument = useCallback(
-    (m: ChatMessage, title?: string) => {
+    (m: ChatMessage) => {
       if (!openEditor) return "Open a document to add these notes to it.";
-      return insertNotes(openEditor, m.body, m.citations ?? [], title);
+      return insertNotes(openEditor, m.body, m.citations ?? []);
     },
     [openEditor]
   );

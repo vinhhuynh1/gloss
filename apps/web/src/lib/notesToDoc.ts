@@ -14,6 +14,7 @@
  */
 import type { Editor, JSONContent } from "@tiptap/core";
 
+import { formatChem } from "./chem";
 import type { ChatCitation } from "./types";
 
 // "#" too, although the prompt asks for "##" and "###" only: the model
@@ -42,7 +43,8 @@ function labeller(citations: ChatCitation[]): (c: ChatCitation) => string {
 }
 
 function inline(text: string, byN: Map<number, ChatCitation>, label: (c: ChatCitation) => string) {
-  const withLabels = text.replace(CITE_RUN_RE, (run) => {
+  // Formulas before labels, so a filename in a label is left as written.
+  const withLabels = formatChem(text).replace(CITE_RUN_RE, (run) => {
     const labels = [...run.matchAll(/\[(\d{1,4})\]/g)]
       .map((m) => byN.get(Number(m[1])))
       .filter((c): c is ChatCitation => c !== undefined)
@@ -142,24 +144,15 @@ export function notesToContent(body: string, citations: ChatCitation[]): JSONCon
  * particular passage, and landing in the middle of whatever someone clicked
  * last would split their notes in two.
  *
- * `title` becomes an H2 over content that has no heading of its own: a chat
- * answer, which is written without them, would otherwise be invisible in the
- * outline once inserted. Notes carry their own "## " sections and keep them.
- *
  * Returns an error message, or null on success.
  */
 export function insertNotes(
   editor: Editor,
   body: string,
-  citations: ChatCitation[],
-  title?: string
+  citations: ChatCitation[]
 ): string | null {
   const content = notesToContent(body, citations);
   if (content.length === 0) return "There is nothing in these notes to add.";
-  const text = title?.trim();
-  if (text && !content.some((b) => b.type === "heading" && (b.attrs?.level ?? 3) <= 2)) {
-    content.unshift({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text }] });
-  }
   const size = editor.state.doc.content.size;
   const at = editor.isEmpty ? { from: 0, to: size } : size;
   const ok = editor.chain().insertContentAt(at, content).scrollIntoView().run();

@@ -5,6 +5,19 @@ the "Evaluation approach" section of the build-plan doc for why that
 matters more than tuning by eyeballing outputs.
 """
 
+# Appended to every prompt whose text a student reads. Unicode rather than
+# LaTeX or plain digits: the app shows these as ordinary text, and "H2SO4"
+# reads as a code where "H₂SO₄" reads as the formula it is. The web app's
+# lib/chem.ts tidies what slips through, but only the model knows that the
+# 3 in "Fe3+" is a charge and not a count.
+FORMULA_RULE = """
+Write chemical formulas, ions and equations with Unicode subscript and \
+superscript characters: H₂SO₄, Ca(OH)₂, Fe³⁺, SO₄²⁻, 2H₂ + O₂ → 2H₂O, and ⇌ \
+for an equilibrium. The same for exponents and units: 10⁻³, m². Never LaTeX \
+or $...$.
+"""
+
+
 AGENT_SYSTEM_PROMPT = """\
 You are a study assistant reviewing a group's shared notes document for one \
 course. You are given a passage of the notes and a set of retrieved excerpts \
@@ -50,7 +63,7 @@ Respond with ONLY a JSON object matching this shape, no other text:
   "source_chunk_id": "string, the id of the excerpt you grounded this in, or null",
   "reasoning": "one sentence, for your own debugging, not shown to the user"
 }
-"""
+""" + FORMULA_RULE
 
 
 def _format_excerpts(retrieved_chunks: list[dict]) -> str:
@@ -122,7 +135,7 @@ Respond with ONLY a JSON object matching this shape, no other text:
     }
   ]
 }
-"""
+""" + FORMULA_RULE
 
 
 def build_study_guide_prompt(notes: str, retrieved_chunks: list[dict]) -> str:
@@ -185,7 +198,7 @@ Respond with ONLY a JSON object matching this shape, no other text:
     }
   ]
 }
-"""
+""" + FORMULA_RULE
 
 
 def build_flashcards_prompt(notes: str, retrieved_chunks: list[dict]) -> str:
@@ -233,7 +246,7 @@ that supports it. Short paragraphs, and "- " bullets where a list is clearer. \
 Use **bold** sparingly for a key term. No headings, no tables, no code blocks \
 unless the course material is itself code. Match length to the question — a \
 definition is a sentence or two, "explain the whole process" can run longer.
-"""
+""" + FORMULA_RULE
 
 
 def _format_numbered_excerpts(retrieved_chunks: list[dict]) -> str:
@@ -295,7 +308,7 @@ Format — the app converts this into the document, so keep exactly to it:
 - Plain paragraphs are allowed but rare; bullets are the norm.
 - **bold** for a key term where it is defined. No italics, tables, links, \
 code blocks or horizontal rules.
-"""
+""" + FORMULA_RULE
 
 
 def _format_pages(pages: list[dict]) -> str:
@@ -382,7 +395,7 @@ were given.
 
 Write "## " headings and "- " bullets, with two spaces of indent per level. \
 No preface and no closing remarks.
-"""
+""" + FORMULA_RULE
 
 
 def build_extract_prompt(pages: list[dict], instructions: str) -> str:
@@ -414,7 +427,7 @@ material; do not propose sections on topics it does not cover.
 
 If the group's existing notes are given, plan only what they are missing. If \
 nothing important is missing, return no sections.
-"""
+""" + FORMULA_RULE
 
 
 def build_plan_prompt(material: str, instructions: str, existing_notes: str) -> str:
