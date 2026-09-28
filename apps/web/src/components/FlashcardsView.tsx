@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { formatChem } from "../lib/chem";
 import type { Deck } from "../lib/types";
 import { IconDismiss, IconNext, IconPrev, IconRestart } from "./Icon";
 
@@ -180,11 +181,11 @@ export default function FlashcardsView({
       ) : (
         <>
           <div className="flashcard" onClick={() => setRevealed(true)}>
-            <p className="flashcard-front">{card.front}</p>
+            <p className="flashcard-front">{formatChem(card.front)}</p>
 
             {revealed ? (
               <>
-                <p className="flashcard-back">{card.back}</p>
+                <p className="flashcard-back">{formatChem(card.back)}</p>
                 {/* The citation is the point of the whole product: the reader
                     can check the answer rather than trusting it. Hidden until
                     revealed in quiz mode, because the filename alone can give

@@ -48,6 +48,7 @@ import {
   uploadSource,
   type AttachSourceDetail,
 } from "../lib/sources";
+import { formatChem } from "../lib/chem";
 import { useChat } from "../lib/useChat";
 import type { ChatCitation, ChatMessage, NotesMode, OutlineSection } from "../lib/types";
 
@@ -130,17 +131,6 @@ function useElapsed(from: string, running: boolean): number {
   return now - new Date(from).getTime();
 }
 
-/** A heading for an inserted answer: the question it answers, on one line
- * and short enough to read in the outline. Answers are written without
- * headings, so without this an inserted answer never shows in the outline. */
-function titleFromQuestion(question: string): string {
-  const line = question.trim().split("\n")[0].trim();
-  if (line.length <= 80) return line;
-  const cut = line.slice(0, 80);
-  const space = cut.lastIndexOf(" ");
-  return `${(space > 40 ? cut.slice(0, space) : cut).trimEnd()}…`;
-}
-
 function sourceLabel(c: ChatCitation): string {
   return [c.filename, c.page_ref].filter(Boolean).join(" · ");
 }
@@ -153,6 +143,7 @@ function renderInline(
   onCite: (n: number) => void,
   key: string
 ): ReactNode[] {
+  text = formatChem(text);
   const out: ReactNode[] = [];
   const pattern = /\*\*(.+?)\*\*|\*([^*\s](?:[^*]*[^*\s])?)\*|\[(\d{1,4})\]/g;
   let last = 0;
@@ -330,7 +321,7 @@ function PlanCard({
                   )
                 }
               />
-              {s.summary && <span className="chat-plan-summary">{s.summary}</span>}
+              {s.summary && <span className="chat-plan-summary">{formatChem(s.summary)}</span>}
             </div>
             {!approved && (
               <span className="chat-plan-move">
@@ -585,9 +576,8 @@ export default function ChatDock({
   openDocumentId: string | null;
   /** The open document's text, so notes can skip what it already says. */
   readNotes: () => string | null;
-  /** Returns an error message, or null once the notes are in the document.
-   * `title` heads content that has no heading of its own. */
-  onInsertNotes: (m: ChatMessage, title?: string) => string | null;
+  /** Returns an error message, or null once the notes are in the document. */
+  onInsertNotes: (m: ChatMessage) => string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -643,13 +633,8 @@ export default function ChatDock({
     [claimApply, releaseApply, onInsertNotes]
   );
 
-  const insertAgain = (m: ChatMessage) => {
-    const question = m.kind === "answer" ? messages.find((q) => q.id === m.reply_to) : undefined;
-    setInsertError(
-      m.id,
-      onInsertNotes(m, question ? titleFromQuestion(question.body) : undefined)
-    );
-  };
+  // The answer alone: what someone typed into the chat stays in the chat.
+  const insertAgain = (m: ChatMessage) => setInsertError(m.id, onInsertNotes(m));
 
   // Auto and plan notes go into their document without a click, from the
   // asker's browser only, and only while that document is the one open —

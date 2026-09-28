@@ -12,6 +12,7 @@
  * traces to something in the course material, and on paper there is no
  * expanding a <details> to find out.
  */
+import { formatChem } from "../lib/chem";
 import type { Guide, GuidePoint, GuideTerm } from "../lib/types";
 import { IconDismiss } from "./Icon";
 
@@ -79,11 +80,11 @@ export default function StudyGuideView({
 
         {guide.sections.map((section, i) => (
           <section key={i}>
-            <h2>{section.heading}</h2>
+            <h2>{formatChem(section.heading)}</h2>
             <ul>
               {section.points.map((point, j) => (
                 <li key={j}>
-                  {point.text}{" "}
+                  {formatChem(point.text)}{" "}
                   <sup className="cite">{numbers.get(point.source_chunk_id)}</sup>
                 </li>
               ))}
@@ -97,9 +98,9 @@ export default function StudyGuideView({
             <dl>
               {guide.key_terms.map((term, i) => (
                 <div key={i}>
-                  <dt>{term.term}</dt>
+                  <dt>{formatChem(term.term)}</dt>
                   <dd>
-                    {term.definition}{" "}
+                    {formatChem(term.definition)}{" "}
                     <sup className="cite">{numbers.get(term.source_chunk_id)}</sup>
                   </dd>
                 </div>
