@@ -17,8 +17,9 @@ import json
 import re
 
 import progress
-from agent import MAX_TOKENS, TOP_K, retrieve_chunks
+from agent import MAX_TOKENS, TOP_K
 from prompts import STUDY_GUIDE_SYSTEM_PROMPT, build_study_guide_prompt
+from retrieval import search_many
 
 # Sections shorter than this are headings, stray list items, or the blank line
 # someone left mid-thought. They are folded into the section that follows
@@ -125,9 +126,12 @@ def retrieve_for_notes(
     """
     best: dict[str, dict] = {}
     searched = sections[:MAX_RETRIEVED_SECTIONS]
-    for i, section in enumerate(searched):
-        progress.retrieval_step(report, i, len(searched))
-        for chunk in retrieve_chunks(study_space_id, section):
+    progress.retrieval_step(report, 0, 1)
+    # One batch rather than a search per section: see retrieval.search_many.
+    results = search_many(study_space_id, searched, TOP_K)
+    progress.retrieval_step(report, 1, 1)
+    for found in results:
+        for chunk in found:
             seen = best.get(chunk["id"])
             if seen is None or chunk["score"] > seen["score"]:
                 best[chunk["id"]] = chunk

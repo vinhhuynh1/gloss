@@ -21,6 +21,10 @@ import type { ChatCitation } from "./types";
 // paragraph would be worse than taking it as the heading it plainly is.
 const HEADING_RE = /^(#{1,3})\s+(.*)$/;
 const BULLET_RE = /^(\s*)[-*]\s+(.*)$/;
+// A line that is nothing but bold, "**Glycolysis**" or "**Glycolysis:**", is
+// the model's heading where it was told not to write one. Taken as the H3 it
+// is meant to be, so it lands in the outline rather than as a bold paragraph.
+const BOLD_LINE_RE = /^\*\*([^*]+?):?\*\*:?$/;
 // A run of adjacent markers, "[3][4]" or "[3] [4]", becomes one label.
 const CITE_RUN_RE = /(?:\s?\[\d{1,4}\])+/g;
 // **bold**, and *italic* — the prompt asks for no italics, but the model uses
@@ -109,6 +113,14 @@ export function notesToContent(body: string, citations: ChatCitation[]): JSONCon
     }
 
     lists = [];
+    const boldLine = BOLD_LINE_RE.exec(line.trim());
+    if (boldLine) {
+      const content = inline(boldLine[1].trim(), byN, label);
+      if (content.length) {
+        blocks.push({ type: "heading", attrs: { level: 3 }, content });
+        continue;
+      }
+    }
     const heading = HEADING_RE.exec(line);
     if (heading) {
       const content = inline(heading[2], byN, label);
@@ -130,11 +142,24 @@ export function notesToContent(body: string, citations: ChatCitation[]): JSONCon
  * particular passage, and landing in the middle of whatever someone clicked
  * last would split their notes in two.
  *
+ * `title` becomes an H2 over content that has no heading of its own: a chat
+ * answer, which is written without them, would otherwise be invisible in the
+ * outline once inserted. Notes carry their own "## " sections and keep them.
+ *
  * Returns an error message, or null on success.
  */
-export function insertNotes(editor: Editor, body: string, citations: ChatCitation[]): string | null {
+export function insertNotes(
+  editor: Editor,
+  body: string,
+  citations: ChatCitation[],
+  title?: string
+): string | null {
   const content = notesToContent(body, citations);
   if (content.length === 0) return "There is nothing in these notes to add.";
+  const text = title?.trim();
+  if (text && !content.some((b) => b.type === "heading" && (b.attrs?.level ?? 3) <= 2)) {
+    content.unshift({ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text }] });
+  }
   const size = editor.state.doc.content.size;
   const at = editor.isEmpty ? { from: 0, to: size } : size;
   const ok = editor.chain().insertContentAt(at, content).scrollIntoView().run();

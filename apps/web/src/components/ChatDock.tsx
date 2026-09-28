@@ -107,6 +107,40 @@ function statusLine(m: ChatMessage): string | null {
   return match ? match[1] : null;
 }
 
+/** "8s", "1m 05s". */
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const sec = String(total % 60).padStart(2, "0");
+  return `${m}m ${sec}s`;
+}
+
+/** Seconds since `from`, ticking once a second while `running`. The answer
+ * rows come from polling, so without a clock of its own the counter would
+ * only move when a poll lands. */
+function useElapsed(from: string, running: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [running]);
+  return now - new Date(from).getTime();
+}
+
+/** A heading for an inserted answer: the question it answers, on one line
+ * and short enough to read in the outline. Answers are written without
+ * headings, so without this an inserted answer never shows in the outline. */
+function titleFromQuestion(question: string): string {
+  const line = question.trim().split("\n")[0].trim();
+  if (line.length <= 80) return line;
+  const cut = line.slice(0, 80);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > 40 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 function sourceLabel(c: ChatCitation): string {
   return [c.filename, c.page_ref].filter(Boolean).join(" · ");
 }
@@ -377,6 +411,12 @@ function Answer({
   const isPlan = message.kind === "plan";
   const progress = statusLine(message);
   const done = message.status === "done" && message.body !== "";
+  const running = message.status === "pending" || message.status === "processing";
+  const elapsed = useElapsed(message.created_at, running);
+  const took =
+    message.status === "done" && message.finished_at
+      ? new Date(message.finished_at).getTime() - new Date(message.created_at).getTime()
+      : null;
 
   let content: ReactNode;
   if (message.status === "failed") {
@@ -403,6 +443,7 @@ function Answer({
             : isNotes || isPlan
               ? "Reading the files…"
               : "Thinking…")}
+        <span className="chat-elapsed">{formatDuration(elapsed)}</span>
       </p>
     );
   } else if (isPlan && done) {
@@ -416,6 +457,9 @@ function Answer({
       >
         <RichText body={message.body} citations={citations} onCite={toggle} />
         {message.status === "processing" && <Orb activity="writing" className="chat-writing" />}
+        {message.status === "processing" && (
+          <span className="chat-elapsed">{formatDuration(elapsed)}</span>
+        )}
       </div>
     );
   }
@@ -425,6 +469,18 @@ function Answer({
       <IconAgent className="chat-message-mark" />
       <div className="chat-message-main">
         {content}
+        {took !== null && (
+          <p className="chat-meta">
+            <time dateTime={message.finished_at ?? undefined}>
+              {new Date(message.finished_at!).toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </time>
+            {" · "}
+            {isPlan ? "planned" : isNotes ? "written" : "answered"} in {formatDuration(took)}
+          </p>
+        )}
         {/* A notes answer can cite forty pages; a chip for each would bury
             the notes. The inline numbers still open their excerpt. */}
         {done && !isNotes && !isPlan && citations.length > 0 && (
@@ -529,8 +585,9 @@ export default function ChatDock({
   openDocumentId: string | null;
   /** The open document's text, so notes can skip what it already says. */
   readNotes: () => string | null;
-  /** Returns an error message, or null once the notes are in the document. */
-  onInsertNotes: (m: ChatMessage) => string | null;
+  /** Returns an error message, or null once the notes are in the document.
+   * `title` heads content that has no heading of its own. */
+  onInsertNotes: (m: ChatMessage, title?: string) => string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -586,7 +643,13 @@ export default function ChatDock({
     [claimApply, releaseApply, onInsertNotes]
   );
 
-  const insertAgain = (m: ChatMessage) => setInsertError(m.id, onInsertNotes(m));
+  const insertAgain = (m: ChatMessage) => {
+    const question = m.kind === "answer" ? messages.find((q) => q.id === m.reply_to) : undefined;
+    setInsertError(
+      m.id,
+      onInsertNotes(m, question ? titleFromQuestion(question.body) : undefined)
+    );
+  };
 
   // Auto and plan notes go into their document without a click, from the
   // asker's browser only, and only while that document is the one open —
