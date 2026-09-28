@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 
 import { IconHide, IconShow } from "../components/Icon";
+import ThemeToggle from "../components/ThemeToggle";
 import { env } from "../lib/env";
 import { signIn } from "../lib/session";
 
@@ -95,6 +96,9 @@ export default function LoginScreen() {
 
   return (
     <div className="login-screen">
+      <div className="login-theme">
+        <ThemeToggle />
+      </div>
       <div className="login-shell">
         {/* The perspective lives on a wrapper, not the disc: a transform on
             the element that also owns the perspective flattens the flip. */}
