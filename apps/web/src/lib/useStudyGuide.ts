@@ -157,7 +157,7 @@ export function useStudyGuide(documentId: string) {
       // guide stays where it is, because no new one was started.
       if (notes.trim() === "") {
         setFetchError(
-          "There are no notes to build a guide from yet — write something first."
+          "There are no notes to build a guide from yet. Write something first."
         );
         return;
       }

@@ -154,7 +154,7 @@ export default function FlashcardsView({
           </p>
           <p className="muted">
             {score === cards.length
-              ? "Every card. Come back to it tomorrow rather than now — that is what makes it stick."
+              ? "Every card. Come back to it tomorrow rather than now. That is what makes it stick."
               : `${cards.length - score} to go back over.`}
           </p>
           <div className="flashcards-score-actions">
