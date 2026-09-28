@@ -11,6 +11,7 @@ import DocumentList from "../components/DocumentList";
 import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
 import FlashcardsView from "../components/FlashcardsView";
+import Orb from "../components/Orb";
 import PresenceBar from "../components/PresenceBar";
 import ShareDialog from "../components/ShareDialog";
 import SourcesPanel from "../components/SourcesPanel";
@@ -103,6 +104,7 @@ function GenerateButton({
       title={queued ? "Waiting for the agent worker to pick this up" : row.stage ?? undefined}
       style={percent !== null ? ({ "--progress": `${percent}%` } as React.CSSProperties) : undefined}
     >
+      <Orb activity={queued ? "queued" : "building"} />
       {queued
         ? `${label} queued…`
         : percent !== null
@@ -332,7 +334,7 @@ function Workspace({
             share a worker, so if one is stuck the other is too. */}
         {(workerSuspect || deckWorkerSuspect) && (
           <span className="muted">
-            Still queued — is the agent worker running?
+            Still queued. Is the agent worker running?
           </span>
         )}
         {guideError && <span className="error">{guideError}</span>}
@@ -607,6 +609,18 @@ export default function SpacePage({
     session?.access_token
   );
 
+  // The page assembles once, on arrival: header, toolbar, rail, notes,
+  // margin, in the order they are read. Held until the workspace has actually
+  // rendered (not the skeleton), then dropped, because Workspace remounts on
+  // every document switch and the rail and margin did not change then.
+  const workspaceReady = Boolean(doc && identity && provider);
+  const [entering, setEntering] = useState(true);
+  useEffect(() => {
+    if (!workspaceReady || !entering) return;
+    const timer = window.setTimeout(() => setEntering(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [workspaceReady, entering]);
+
   async function invite(email: string) {
     const member = await apiFetch<Member>(`/study-spaces/${spaceId}/members`, {
       method: "POST",
@@ -635,7 +649,7 @@ export default function SpacePage({
   }
 
   return (
-    <div className="space-page">
+    <div className={`space-page${entering ? " is-entering" : ""}`}>
       <header className="app-header">
         {/* A trail rather than a back link beside a title. "All spaces" on
             its own says where you would go; a trail says where you are, which

@@ -18,6 +18,7 @@ import { useId, useRef, useState } from "react";
 import type { Member } from "../lib/types";
 import { colorFromId } from "../lib/avatarColor";
 import Modal from "./Modal";
+import Orb from "./Orb";
 import { IconDismiss, IconInvite } from "./Icon";
 
 /** Owner first, then alphabetical. The API returns join order, which puts the
@@ -102,7 +103,7 @@ export default function ShareDialog({
               disappears, so the field still says what it is for after
               someone starts typing. The placeholder is a single space only so
               CSS can tell empty from filled with :placeholder-shown. */}
-          <div className="share-outlined">
+          <div className="outlined-field">
             <input
               ref={inputRef}
               id={inputId}
@@ -120,7 +121,7 @@ export default function ShareDialog({
             <label htmlFor={inputId}>Classmate's email address</label>
           </div>
           <button type="submit" className="with-icon" disabled={busy || !email.trim()}>
-            <IconInvite size={14} />
+            {busy ? <Orb activity="busy" /> : <IconInvite size={14} />}
             {busy ? "Adding…" : "Add"}
           </button>
         </div>
@@ -130,7 +131,7 @@ export default function ShareDialog({
           </p>
         ) : (
           <p className="share-hint" id={hintId}>
-            They need an account already — this resolves an address to a person
+            They need an account already. This resolves an address to a person
             rather than sending mail.
           </p>
         )}

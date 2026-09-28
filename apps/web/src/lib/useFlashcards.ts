@@ -147,7 +147,7 @@ export function useFlashcards(documentId: string) {
       // just wants to be told the page is blank.
       if (notes.trim() === "") {
         setFetchError(
-          "There are no notes to make flashcards from yet — write something first."
+          "There are no notes to make flashcards from yet. Write something first."
         );
         return;
       }

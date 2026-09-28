@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { WebsocketProvider } from "y-websocket";
 
 import type { ConnectionStatus } from "../lib/useCollabProvider";
+import Orb from "./Orb";
 
 interface Peer {
   clientId: number;
@@ -15,8 +16,8 @@ const STATUS_TEXT: Record<ConnectionStatus, string> = {
   synced: "Live",
   // States the sentence, rather than just naming the state: this is the
   // user-facing form of the guarantee the CRDT actually provides.
-  offline: "Offline — edits are kept and will sync when you reconnect",
-  denied: "Can't join this document — you may have been removed from the space",
+  offline: "Offline. Edits are kept and will sync when you reconnect",
+  denied: "Can't join this document. You may have been removed from the space",
 };
 
 /**
@@ -90,6 +91,7 @@ export default function PresenceBar({
       </div>
 
       <span className={`conn-badge is-${status}`} title={STATUS_TEXT[status]}>
+        {(status === "connecting" || status === "syncing") && <Orb activity="syncing" />}
         {status === "synced"
           ? `${peers.length} here now`
           : STATUS_TEXT[status]}

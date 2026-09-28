@@ -228,7 +228,7 @@ export default function SpaceListPage({
           </div>
         ) : (
           <ul className="space-grid">
-            {shown.map((space) => {
+            {shown.map((space, i) => {
               if (renaming === space.id) {
                 return (
                   <li key={space.id}>
@@ -257,7 +257,11 @@ export default function SpaceListPage({
                 // The menu is a sibling of the card, not a child: a button
                 // inside a button is invalid and the inner one stops opening.
                 // Same shape the document rail uses.
-                <li className="space-cell" key={space.id}>
+                <li
+                  className="space-cell"
+                  key={space.id}
+                  style={{ "--i": i } as React.CSSProperties}
+                >
                   <button className="space-card" onClick={() => onOpen(space)}>
                     <span
                       className="space-card-mark"

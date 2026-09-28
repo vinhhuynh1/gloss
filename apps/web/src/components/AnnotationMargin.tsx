@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import CommentComposer from "./CommentComposer";
+import Orb from "./Orb";
 import type {
   AnchoredAnnotation,
   Comment,
@@ -63,11 +64,14 @@ function RequestChip({
     request.status === "pending" && Date.now() - request.askedAt > WORKER_SUSPECT_MS;
   return (
     <div className="request-chip request-open">
-      <span>Checking “{preview}”…</span>
+      <span className="request-checking">
+        <Orb activity="checking" />
+        Checking “{preview}”…
+      </span>
       {stalled && (
         <p className="warning">
           Still waiting. A check waits for this space&apos;s uploads to finish
-          processing — otherwise, is the agent worker running?
+          processing. If they have, is the agent worker running?
           <code>cd apps/agent-worker &amp;&amp; python worker.py</code>
         </p>
       )}
