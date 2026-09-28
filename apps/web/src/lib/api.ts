@@ -59,7 +59,7 @@ export async function apiFetch<T>(
     // all. Say which API could not be reached instead.
     throw new ApiError(
       0,
-      `Can't reach the API at ${env.API_BASE_URL} — it may be down, or this ` +
+      `Can't reach the API at ${env.API_BASE_URL}. It may be down, or this ` +
         `origin may not be in its ALLOWED_ORIGINS.`
     );
   }

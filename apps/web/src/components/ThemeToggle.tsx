@@ -39,7 +39,7 @@ export default function ThemeToggle() {
     <button
       className="icon-button"
       onClick={() => setTheme(next)}
-      title={`Theme: ${FACE[theme].label} — switch to ${FACE[next].label}`}
+      title={`Theme: ${FACE[theme].label}. Switch to ${FACE[next].label}`}
       aria-label={`Theme: ${FACE[theme].label}. Switch to ${FACE[next].label}.`}
     >
       <Icon />
