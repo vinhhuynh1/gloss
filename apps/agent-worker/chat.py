@@ -27,7 +27,7 @@ from collections.abc import Callable
 
 from agent import ANTHROPIC_MODEL, _get_client
 from prompts import CHAT_SYSTEM_PROMPT, build_chat_question
-from retrieval import search
+from retrieval import search_many
 
 TOP_K = 6
 PREVIOUS_TOP_K = 3
@@ -59,15 +59,14 @@ NO_MATERIAL_REPLY = (
 
 
 def retrieve(study_space_id: str, question: str, previous_question: str | None) -> list[dict]:
-    chunks = search(study_space_id, question, TOP_K)
-    if previous_question:
-        seen = {c["id"] for c in chunks}
-        chunks += [
-            c
-            for c in search(study_space_id, previous_question, PREVIOUS_TOP_K)
-            if c["id"] not in seen
-        ]
-    return chunks
+    if not previous_question:
+        return search_many(study_space_id, [question], TOP_K)[0]
+    # Both in one batch and one connection. The previous question is searched
+    # at TOP_K and cut to PREVIOUS_TOP_K here, which returns the same chunks
+    # as asking for PREVIOUS_TOP_K would.
+    chunks, earlier = search_many(study_space_id, [question, previous_question], TOP_K)
+    seen = {c["id"] for c in chunks}
+    return chunks + [c for c in earlier[:PREVIOUS_TOP_K] if c["id"] not in seen]
 
 
 def build_messages(
@@ -147,10 +146,11 @@ def answer(
         max_tokens=MAX_TOKENS,
         system=CHAT_SYSTEM_PROMPT,
         messages=build_messages(history, author, question, chunks),
-        # medium rather than the default high: this is a person waiting on a
-        # reply grounded in six excerpts, not a whole-document synthesis, and
-        # the wait before the first word is most of what they experience.
-        output_config={"effort": "medium"},
+        # low rather than the default high: this is a person waiting on a
+        # reply grounded in a handful of excerpts, not a whole-document
+        # synthesis, and the wait before the first word is most of what they
+        # experience.
+        output_config={"effort": "low"},
         # Same reasoning as agent.call_llm: a policy decline is re-run on the
         # recommended fallback rather than ending the answer.
         betas=["server-side-fallback-2026-07-01"],

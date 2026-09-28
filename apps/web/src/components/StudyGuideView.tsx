@@ -13,6 +13,7 @@
  * expanding a <details> to find out.
  */
 import type { Guide, GuidePoint, GuideTerm } from "../lib/types";
+import { IconDismiss } from "./Icon";
 
 /** Sources in citation order, and the number to print against each point.
  *
@@ -57,8 +58,13 @@ export default function StudyGuideView({
       {/* Hidden in print via @media print — a toolbar on paper is wasted ink. */}
       <div className="study-guide-actions">
         <button onClick={() => window.print()}>Print / Save as PDF</button>
-        <button className="link-button" onClick={onClose}>
-          Back to notes
+        <button
+          className="icon-button"
+          aria-label="Close study guide"
+          title="Close"
+          onClick={onClose}
+        >
+          <IconDismiss />
         </button>
       </div>
 
