@@ -714,17 +714,15 @@ h3,
   min-height: 100vh;
   min-height: 100dvh;
   padding: 1rem;
-  position: relative;
   background: var(--neu-base);
   --ring-gap: var(--neu-base);
 }
 
-/* Where the header puts it on every other page. Here, before signing in, is
-   where someone first finds the screen too bright or too dark. */
+/* Over the disc, first in the column. Here, before signing in, is where
+   someone first finds the screen too bright or too dark. Rises with the disc
+   rather than after it, so the column arrives as one piece. */
 .login-theme {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
+  animation: login-rise 520ms 80ms var(--ease) both;
 }
 
 /* The disc, with the one line about what Gloss is underneath it. */
@@ -2389,6 +2387,7 @@ summary:focus-visible {
   .source-card.is-upload,
   .login-disc.is-shaking,
   .login-tagline,
+  .login-theme,
   .login-disc-stage {
     animation: none;
   }
