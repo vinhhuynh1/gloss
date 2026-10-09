@@ -151,57 +151,62 @@ described in your instructions.
 """
 
 
-FLASHCARDS_SYSTEM_PROMPT = """\
+QUIZ_SYSTEM_PROMPT = """\
 You are a study assistant turning a group's shared notes document for one \
-course into a deck of flashcards. You are given the whole notes document and a \
-set of retrieved excerpts from the course's own source material.
+course into a multiple-choice quiz. You are given the whole notes document and \
+a set of retrieved excerpts from the course's own source material.
 
-The deck covers THEIR NOTES, not the subject. Make cards for what the notes \
-cover. Do not introduce topics the notes do not raise, however important they \
-are to the subject — a deck that quietly adds material stops being a record of \
-what this group decided to study, and the reader cannot tell the two apart.
+The quiz covers THEIR NOTES, not the subject. Write questions for what the \
+notes cover. Do not introduce topics the notes do not raise, however important \
+they are to the subject — a quiz that quietly adds material stops being a test \
+of what this group decided to study, and the reader cannot tell the two apart.
 
-Every card must be grounded in one retrieved excerpt, and you must give that \
-excerpt's chunk_id. A reader revising from this deck has to be able to check \
-any answer against the course material. Do not use outside knowledge, even \
-where you are confident it is correct. If the notes make a claim no excerpt \
-supports, leave it out rather than citing an excerpt that does not actually \
-say it — a wrong citation is worse than a missing card, because it looks \
-checked.
+Every question must be grounded in one retrieved excerpt, and you must give \
+that excerpt's chunk_id. A reader checking their result has to be able to \
+verify the correct answer against the course material. Do not use outside \
+knowledge, even where you are confident it is correct. If the notes make a \
+claim no excerpt supports, leave it out rather than citing an excerpt that \
+does not actually say it — a wrong citation is worse than a missing question, \
+because it looks checked.
 
-What makes a good card, and this is the whole craft of it:
+What makes a good question, and this is the whole craft of it:
 
-- One fact per card. A card asking two things cannot be answered right or \
-wrong, so it cannot tell the reader what they know.
-- The front is a question that can be answered from memory. "Glycolysis" is \
-not a card; "Where in the cell does glycolysis happen, and what does it \
-produce per glucose?" is.
-- The back is the shortest complete answer. A paragraph on the back means the \
-reader grades themselves generously and learns nothing.
-- Prefer cards that test understanding over cards that test recognition. \
-"Why does FADH2 yield less ATP than NADH?" beats "Does Complex II pump \
-protons?", which can be guessed.
-- Do not write a card whose answer is in its own question.
+- One idea per question. A question testing two things at once cannot tell \
+the reader which one they got wrong.
+- Prefer questions that test understanding over recognition. "Why does FADH2 \
+yield less ATP than NADH?" beats "Which molecule is FADH2?".
+- Exactly four options, exactly one of them correct, and the correct one must \
+be fully supported by the cited excerpt.
+- The three wrong options are plausible: common misconceptions, near-miss \
+values, or related terms from the same material. No joke options, and never \
+"all of the above" or "none of the above".
+- All four options have similar length and the same grammatical form, so the \
+answer cannot be spotted by its shape.
+- The question must not contain its own answer.
+- The explanation says why the correct answer is right, in one or two \
+sentences, drawn from the cited excerpt.
 
-Aim for one to three cards per distinct idea in the notes. A short document \
-makes a short deck; padding it with trivia teaches the reader to ignore their \
-own cards.
+Aim for about one question per key idea in the notes, and never more than 25. \
+A short document makes a short quiz; padding it with trivia teaches the reader \
+nothing.
 
 Respond with ONLY a JSON object matching this shape, no other text:
 {
-  "title": "string, a short title for the deck, drawn from what the notes are about",
-  "cards": [
+  "title": "string, a short title for the quiz, drawn from what the notes are about",
+  "questions": [
     {
-      "front": "string, the question",
-      "back": "string, the answer, as short as it can be while still complete",
-      "source_chunk_id": "string, the id of the excerpt this card is grounded in"
+      "question": "string, the question",
+      "options": ["string", "string", "string", "string"],
+      "correct_index": "integer 0-3, the position of the correct option",
+      "explanation": "string, why the correct answer is right",
+      "source_chunk_id": "string, the id of the excerpt this question is grounded in"
     }
   ]
 }
 """ + FORMULA_RULE
 
 
-def build_flashcards_prompt(notes: str, retrieved_chunks: list[dict]) -> str:
+def build_quiz_prompt(notes: str, retrieved_chunks: list[dict]) -> str:
     return f"""\
 NOTES DOCUMENT:
 {notes}
@@ -209,8 +214,8 @@ NOTES DOCUMENT:
 RETRIEVED SOURCE EXCERPTS:
 {_format_excerpts(retrieved_chunks)}
 
-Write the flashcard deck for these notes and respond with the JSON object \
-described in your instructions.
+Write the quiz for these notes and respond with the JSON object described in \
+your instructions.
 """
 
 

@@ -35,9 +35,9 @@ from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
 
 import chat
-import flashcards
 import make_notes
 import progress
+import quiz
 import study_guide
 from agent import check_passage, cited_chunk
 from embeddings import embed_batch
@@ -438,25 +438,24 @@ def study_guides_available(conn) -> bool:
         return bool(cur.fetchone()[0])
 
 
-def flashcards_available(conn) -> bool:
-    """Does the flashcard_sets table exist yet?
+def quizzes_available(conn) -> bool:
+    """Does the quizzes table exist yet?
 
     The same guard as study_guides_available, for the same reason and with the
     same history: 005 was merged before it was applied and the worker
     crash-looped until someone noticed. Checked once at startup so a deploy
-    that gets ahead of its migration costs the flashcard queue and nothing
-    else.
+    that gets ahead of 014 costs the quiz queue and nothing else.
     """
     with conn.cursor() as cur:
-        cur.execute("SELECT to_regclass('public.flashcard_sets') IS NOT NULL")
+        cur.execute("SELECT to_regclass('public.quizzes') IS NOT NULL")
         return bool(cur.fetchone()[0])
 
 
 def progress_available(conn) -> bool:
-    """Do study_guides and flashcard_sets have the progress columns (012)?
+    """Do study_guides and quizzes have the progress columns?
 
     Checked once at startup, like the table guards above. Without them the
-    worker writes guides and decks exactly as before, just with no progress
+    worker writes guides and quizzes exactly as before, just with no progress
     for the editor to show — a deploy ahead of its migration costs the bar
     and nothing else.
     """
@@ -465,7 +464,7 @@ def progress_available(conn) -> bool:
             """
             SELECT count(*) FROM information_schema.columns
              WHERE table_schema = 'public'
-               AND table_name IN ('study_guides', 'flashcard_sets')
+               AND table_name IN ('study_guides', 'quizzes')
                AND column_name IN ('progress', 'stage')
             """
         )
@@ -479,7 +478,7 @@ _progress_on = False
 # One write a second at most. The editor polls every two.
 PROGRESS_WRITE_SECONDS = 1.0
 
-_PROGRESS_TABLES = ("study_guides", "flashcard_sets")
+_PROGRESS_TABLES = ("study_guides", "quizzes")
 
 
 def _progress_reporter(conn, table: str, row_id, attempts: int) -> progress.Report:
@@ -516,12 +515,12 @@ def _progress_reporter(conn, table: str, row_id, attempts: int) -> progress.Repo
     return report
 
 
-def reclaim_stale_flashcards(conn) -> int:
-    """Same as reclaim_stale, for the flashcard queue."""
+def reclaim_stale_quizzes(conn) -> int:
+    """Same as reclaim_stale, for the quiz queue."""
     with conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE flashcard_sets
+            UPDATE quizzes
                SET status = 'pending', claimed_at = NULL
              WHERE status = 'processing'
                AND claimed_at < now() - make_interval(secs => %s)
@@ -531,88 +530,87 @@ def reclaim_stale_flashcards(conn) -> int:
         return cur.rowcount
 
 
-def claim_next_flashcard_set(conn):
-    """Claim one pending deck, or return None.
+def claim_next_quiz(conn):
+    """Claim one pending quiz, or return None.
 
     Same shape as claim_next_study_guide, including the wait on unsettled
-    uploads: a deck generated while half the slides are still being chunked
-    would silently cover half the course, and nothing about the finished deck
+    uploads: a quiz written while half the slides are still being chunked
+    would silently cover half the course, and nothing about the finished quiz
     would say so.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE flashcard_sets fs
+            UPDATE quizzes qz
                SET status = 'processing',
                    claimed_at = now(),
-                   attempts = fs.attempts + 1
+                   attempts = qz.attempts + 1
               FROM documents d
-             WHERE fs.id = (
-                   SELECT f.id
-                     FROM flashcard_sets f
-                     JOIN documents fd ON fd.id = f.document_id
-                    WHERE f.status = 'pending'
+             WHERE qz.id = (
+                   SELECT q.id
+                     FROM quizzes q
+                     JOIN documents qd ON qd.id = q.document_id
+                    WHERE q.status = 'pending'
                       AND NOT EXISTS (
                           SELECT 1 FROM sources s
-                           WHERE s.study_space_id = fd.study_space_id
+                           WHERE s.study_space_id = qd.study_space_id
                              AND s.status IN ('pending', 'processing')
                       )
-                    ORDER BY f.created_at
-                      FOR UPDATE OF f SKIP LOCKED
+                    ORDER BY q.created_at
+                      FOR UPDATE OF q SKIP LOCKED
                     LIMIT 1
              )
-               AND d.id = fs.document_id
-         RETURNING fs.id, d.study_space_id, fs.notes, fs.attempts
+               AND d.id = qz.document_id
+         RETURNING qz.id, d.study_space_id, qz.notes, qz.attempts
             """
         )
         return cur.fetchone()
 
 
-def _fail_flashcard_set(conn, set_id, attempts: int, message: str, *, retry: bool):
-    """Mirror of _fail_study_guide for the flashcard queue."""
+def _fail_quiz(conn, quiz_id, attempts: int, message: str, *, retry: bool):
+    """Mirror of _fail_study_guide for the quiz queue."""
     give_up = not retry or attempts >= MAX_ATTEMPTS
     with conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE flashcard_sets
+            UPDATE quizzes
                SET status = %s, error = %s, claimed_at = NULL,
                    finished_at = CASE WHEN %s THEN now() END
             WHERE id = %s
             """,
-            ("failed" if give_up else "pending", message[:MAX_ERROR_CHARS], give_up, set_id),
+            ("failed" if give_up else "pending", message[:MAX_ERROR_CHARS], give_up, quiz_id),
         )
     verb = "failed" if give_up else f"will retry ({attempts}/{MAX_ATTEMPTS})"
     print(f"  {verb}: {message[:200]}")
 
 
-def process_flashcard_set(conn, row) -> bool:
-    """Generate one deck for a claimed row. Returns True on success."""
-    set_id, study_space_id, notes, attempts = row
-    print(f"Writing flashcards {set_id}")
-    report = _progress_reporter(conn, "flashcard_sets", set_id, attempts)
+def process_quiz(conn, row) -> bool:
+    """Write one quiz for a claimed row. Returns True on success."""
+    quiz_id, study_space_id, notes, attempts = row
+    print(f"Writing quiz {quiz_id}")
+    report = _progress_reporter(conn, "quizzes", quiz_id, attempts)
     report(progress.STAGE_STARTING, 2)
 
     try:
-        deck, _chunks = flashcards.generate(str(study_space_id), notes, report)
+        result, _chunks = quiz.generate(str(study_space_id), notes, report)
     except study_guide.EmptyNotesError as exc:
         # Nothing to write from, and nothing a retry would change.
-        _fail_flashcard_set(conn, set_id, attempts, str(exc), retry=False)
+        _fail_quiz(conn, quiz_id, attempts, str(exc), retry=False)
         return False
     except Exception as exc:  # noqa: BLE001 — every failure is the requester's to see
         message, retry = _describe_agent_error(exc)
-        _fail_flashcard_set(conn, set_id, attempts, message, retry=retry)
+        _fail_quiz(conn, quiz_id, attempts, message, retry=retry)
         return False
 
-    if not deck["cards"]:
-        # Every card the model wrote cited an excerpt it was never given, so
-        # _validate_deck dropped them all. One retry is worth it — this is a
-        # bad sample, not a bad document.
-        _fail_flashcard_set(
+    if not result["questions"]:
+        # Every question cited an excerpt it was never given or came back
+        # malformed, so _validate_quiz dropped them all. One retry is worth
+        # it — this is a bad sample, not a bad document.
+        _fail_quiz(
             conn,
-            set_id,
+            quiz_id,
             attempts,
-            "The deck came back with nothing that could be traced to your "
-            "source material, so it was discarded rather than shown.",
+            "No questions could be grounded in your sources.",
             retry=True,
         )
         return False
@@ -621,18 +619,18 @@ def process_flashcard_set(conn, row) -> bool:
     with conn.cursor() as cur:
         cur.execute(
             """
-            UPDATE flashcard_sets
-               SET status = 'done', cards = %s, error = NULL, claimed_at = NULL,
+            UPDATE quizzes
+               SET status = 'done', questions = %s, error = NULL, claimed_at = NULL,
                    finished_at = now()
              WHERE id = %s AND attempts = %s
             """,
-            (Jsonb(deck), set_id, attempts),
+            (Jsonb(result), quiz_id, attempts),
         )
         if cur.rowcount == 0:
             print("  claim was reclaimed by another worker; discarding this result")
             return False
 
-    print(f"  {len(deck['cards'])} cards")
+    print(f"  {len(result['questions'])} questions")
     return True
 
 
@@ -1108,7 +1106,7 @@ def _lane(name: str, jobs, poll: float, once: bool, stop: threading.Event) -> No
 
 def run(once: bool = False):
     """Each queue family gets its own lane, so a study guide that takes a
-    minute no longer holds up a chat answer, a check, or a deck queued behind
+    minute no longer holds up a chat answer, a check, or a quiz queued behind
     it. Claims are FOR UPDATE SKIP LOCKED throughout, which is what already
     made running several workers safe; lanes are the same thing in-process.
     """
@@ -1136,16 +1134,16 @@ def run(once: bool = False):
         global _progress_on
         _progress_on = progress_available(conn)
         if not _progress_on:
-            print("NOTE: no progress columns on study_guides/flashcard_sets — "
-                  "guides and decks run without a progress bar. Apply")
+            print("NOTE: no progress columns on study_guides/quizzes — "
+                  "guides and quizzes run without a progress bar. Apply")
             print("      infra/migrations/012_generation_progress.sql and "
                   "restart this worker to turn it on.")
 
-        cards_on = flashcards_available(conn)
-        if not cards_on:
-            print("WARNING: no flashcard_sets table — flashcards are OFF "
+        quizzes_on = quizzes_available(conn)
+        if not quizzes_on:
+            print("WARNING: no quizzes table — quizzes are OFF "
                   "for this process.")
-            print("         Apply infra/migrations/007_flashcards.sql, re-run")
+            print("         Apply infra/migrations/014_quizzes.sql, re-run")
             print("         infra/supabase/011_lockdown.sql on Supabase, then")
             print("         restart this worker. Everything else is "
                   "unaffected.")
@@ -1168,10 +1166,10 @@ def run(once: bool = False):
             [(reclaim_stale_study_guides, claim_next_study_guide, process_study_guide)],
             POLL_INTERVAL_SECONDS,
         ))
-    if cards_on:
+    if quizzes_on:
         lanes.append((
-            "flashcards",
-            [(reclaim_stale_flashcards, claim_next_flashcard_set, process_flashcard_set)],
+            "quizzes",
+            [(reclaim_stale_quizzes, claim_next_quiz, process_quiz)],
             POLL_INTERVAL_SECONDS,
         ))
 
@@ -1189,7 +1187,7 @@ def run(once: bool = False):
         names = ", ".join(name for name, _jobs, _poll in lanes)
         off = [
             name
-            for name, on in (("chat", chat_on), ("guides", guides_on), ("flashcards", cards_on))
+            for name, on in (("chat", chat_on), ("guides", guides_on), ("quizzes", quizzes_on))
             if not on
         ]
         suffix = f" ({', '.join(off)} OFF)" if off else ""
