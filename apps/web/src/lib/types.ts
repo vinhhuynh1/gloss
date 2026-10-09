@@ -146,31 +146,34 @@ export interface StudyGuideRow extends StudyGuideStatusRow {
   guide: Guide | null;
 }
 
-/** Generation state of a deck. Same queue as a study guide, and the API only
+/** Generation state of a quiz. Same queue as a study guide, and the API only
  * ever creates it as pending — see apps/agent-worker/worker.py. */
-export type FlashcardsStatus = "pending" | "processing" | "done" | "failed";
+export type QuizStatus = "pending" | "processing" | "done" | "failed";
 
-/** One card. The source fields are copied from the cited chunk at write time,
- * so a card still says where its answer came from after the next re-chunk —
- * same contract as GuidePoint. */
-export interface Flashcard {
-  front: string;
-  back: string;
+/** One question. Options are already shuffled by the worker, and
+ * `correct_index` points into them. The source fields are copied from the
+ * cited chunk at write time, so a question still says where its answer came
+ * from after the next re-chunk — same contract as GuidePoint. */
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
   source_chunk_id: string;
   source_filename: string | null;
   source_page_ref: string | null;
   source_excerpt: string | null;
 }
 
-export interface Deck {
+export interface Quiz {
   title: string;
-  cards: Flashcard[];
+  questions: QuizQuestion[];
 }
 
-export interface FlashcardsStatusRow {
+export interface QuizStatusRow {
   id: string;
   document_id: string;
-  status: FlashcardsStatus;
+  status: QuizStatus;
   attempts: number;
   error: string | null;
   created_at: string;
@@ -180,8 +183,8 @@ export interface FlashcardsStatusRow {
   stage?: string | null;
 }
 
-export interface FlashcardsRow extends FlashcardsStatusRow {
-  cards: Deck | null;
+export interface QuizRow extends QuizStatusRow {
+  questions: Quiz | null;
 }
 
 /**

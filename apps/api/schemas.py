@@ -230,7 +230,7 @@ class StudyGuideOut(StudyGuideStatusOut):
     guide: dict | None
 
 
-class CreateFlashcards(BaseModel):
+class CreateQuiz(BaseModel):
     """Same body as CreateStudyGuide, and the same bound: the whole notes
     document, sent by the client because documents.crdt_snapshot is a Yjs
     update nothing in Python can decode."""
@@ -240,12 +240,12 @@ class CreateFlashcards(BaseModel):
     ]
 
 
-class FlashcardsStatusOut(ORMModel):
+class QuizStatusOut(ORMModel):
     """Is it ready yet — the shape the editor polls.
 
-    Carries no `cards` and no `notes`, both deferred on the model. A poll that
-    answered "still working" by dragging the whole deck across the wire is the
-    egress mistake this codebase has already made once.
+    Carries no `questions` and no `notes`, both deferred on the model. A poll
+    that answered "still working" by dragging the whole quiz across the wire
+    is the egress mistake this codebase has already made once.
     """
 
     id: uuid.UUID
@@ -257,23 +257,23 @@ class FlashcardsStatusOut(ORMModel):
     finished_at: datetime | None
 
 
-class FlashcardsProgressOut(FlashcardsStatusOut):
-    """Same as StudyGuideProgressOut, for decks."""
+class QuizProgressOut(QuizStatusOut):
+    """Same as StudyGuideProgressOut, for quizzes."""
 
     progress: int | None = None
     stage: str | None = None
 
 
-class FlashcardsOut(FlashcardsStatusOut):
-    """The finished deck, fetched once after the poll reports 'done'.
+class QuizOut(QuizStatusOut):
+    """The finished quiz, fetched once after the poll reports 'done'.
 
-    `cards` stays a plain dict for the same reason `guide` does: its shape is
-    the model's structured output (CARDS_SCHEMA in
-    apps/agent-worker/flashcards.py), and declaring it twice would mean two
-    places to change and a 500 for any deck written before the change.
+    `questions` stays a plain dict for the same reason `guide` does: its
+    shape is the model's structured output (QUIZ_SCHEMA in
+    apps/agent-worker/quiz.py), and declaring it twice would mean two places
+    to change.
     """
 
-    cards: dict | None
+    questions: dict | None
 
 
 # A question, not a document. The question is embedded as a retrieval query,

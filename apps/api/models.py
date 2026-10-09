@@ -257,15 +257,16 @@ class StudyGuide(Base):
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
-class FlashcardSet(Base):
-    """One generated deck. Same queue shape as StudyGuide — see 007.
+class Quiz(Base):
+    """One generated multiple-choice quiz. Same queue shape as StudyGuide —
+    see 014.
 
     A separate table rather than a `kind` column on study_guides: the
     lifecycle is shared but the payload is not, and one JSONB column holding
     either shape would make every reader branch on which it got.
     """
 
-    __tablename__ = "flashcard_sets"
+    __tablename__ = "quizzes"
 
     id: Mapped[uuid.UUID] = uuid_pk()
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"))
@@ -278,10 +279,10 @@ class FlashcardSet(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Deferred for the same reason guide is: the status endpoint is polled
-    # every two seconds while a deck is running, and shipping every card and
-    # every cited excerpt to answer "still working" is exactly the egress
+    # every two seconds while a quiz is running, and shipping every question
+    # and every cited excerpt to answer "still working" is exactly the egress
     # mistake infra/README.md documents.
-    cards: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
+    questions: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
 

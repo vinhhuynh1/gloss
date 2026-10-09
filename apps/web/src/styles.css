@@ -113,7 +113,7 @@
      One rule, applied everywhere:
        --radius-1     controls, rows, inputs, inline marks (mentions, cites)
        --radius-2     cards, panels, menus, popovers
-       --radius-3     dialogs and large floating surfaces (chat, flashcard)
+       --radius-3     dialogs and large floating surfaces (chat, quiz)
        --radius-pill  chips, counts, header links, segmented toggles
        50%            avatars, dots, round icon buttons, the sign-in disc
      The only literal pixel radii are 1-2px on hairline indicators and focus
@@ -374,7 +374,7 @@ h3,
 /* Citations, filenames, page refs, chunk ids: apparatus, not prose. Mono is
    what separates "where this came from" from "what it says". */
 .mono,
-.flashcard-source summary,
+.quiz-source summary,
 .suggestion-source summary,
 .study-guide-sources .source-label {
   font-family: var(--font-mono);
@@ -1087,10 +1087,10 @@ summary:focus-visible {
   animation: enter-rise var(--dur-slow) var(--ease) both;
 }
 
-/* Switching to the study guide or the flashcards replaces the whole pane;
+/* Switching to the study guide or the quiz replaces the whole pane;
    a slightly longer rise tells a new view from a new item. */
 .study-guide,
-.flashcards {
+.quiz {
   animation: enter-rise 320ms var(--ease) both;
 }
 
@@ -1761,7 +1761,7 @@ summary:focus-visible {
 
 /* The toolbar sits between the header and the three rails, so the rails lose
    its height. .app-layout's calc is the one place that number lives. */
-/* "Make something from these notes" — a study guide and a deck are the same
+/* "Make something from these notes" — a study guide and a quiz are the same
    kind of act, so they sit together rather than competing across the bar. */
 .workspace-toolbar {
   display: flex;
@@ -1774,7 +1774,7 @@ summary:focus-visible {
 }
 
 /* Ink is reserved for committing something - an invite, accepting a
-   suggestion. Generating a guide or a deck starts a long job rather than
+   suggestion. Generating a guide or a quiz starts a long job rather than
    settling anything, and two solid blocks side by side gave no steer on
    which was the ordinary choice. */
 .workspace-toolbar button:not(.link-button):not(.result-chip) {
@@ -2075,17 +2075,17 @@ summary:focus-visible {
   font-size: var(--text-base);
 }
 
-/* --- flashcards ---
-   Narrower than the study guide's 46rem: a card is one question and one
-   answer, and a wide column makes a short answer look lost in it. */
+/* --- quiz ---
+   Narrower than the study guide's 46rem: one question and four options, and
+   a wide column stretches a short option into a line that is hard to scan. */
 
-.flashcards {
-  max-width: 34rem;
+.quiz {
+  max-width: 36rem;
   margin: 0 auto;
   padding: 2rem 1.5rem 4rem;
 }
 
-.flashcards-actions {
+.quiz-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2093,61 +2093,73 @@ summary:focus-visible {
   margin-bottom: 1.5rem;
 }
 
-.flashcards-modes {
-  display: flex;
-  gap: 0.15rem;
-  padding: 0.15rem;
-  background: var(--accent-tint);
-  border-radius: var(--radius-pill);
-}
-
-/* Unsets the global accent-filled button: only the selected tab is filled,
-   or the pair reads as two separate actions rather than one choice. */
-.flashcards-modes button {
-  border: none;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--accent-text);
-  padding: 0.3rem 0.8rem;
-  font-size: var(--text-base);
-}
-
-.flashcards-modes button.is-active {
-  background: var(--surface);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.flashcards-title {
+.quiz-title {
   font-size: var(--text-lg);
   margin: 0 0 0.3rem;
 }
 
-.flashcards-generated {
+.quiz-generated {
   margin: 0 0 1.5rem;
   font-size: var(--text-sm);
 }
 
-/* min-height rather than a fixed height: the card must not resize when the
-   answer appears, or the controls jump out from under the cursor mid-click. */
-.flashcard {
+/* Where you are and what is left, at a glance. Answered fills, current gets
+   a ring, so the two read separately when they coincide. */
+.quiz-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.quiz-dots button.quiz-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+}
+
+.quiz-dots button.quiz-dot.is-answered {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.quiz-dots button.quiz-dot.is-current {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-border);
+}
+
+@media (hover: hover) {
+  .quiz-dots button.quiz-dot:hover:not(:disabled) {
+    background: var(--accent-tint-hover);
+  }
+
+  .quiz-dots button.quiz-dot.is-answered:hover:not(:disabled) {
+    background: var(--accent);
+  }
+}
+
+/* min-height so the controls do not jump when a short question follows a
+   long one. */
+.quiz-card {
   border-radius: var(--radius-3);
   box-shadow: var(--shadow), inset 0 1px 0 var(--edge-highlight);
-  min-height: 14rem;
+  min-height: 18rem;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 0.75rem;
+  gap: 0.9rem;
   padding: 1.5rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  cursor: pointer;
 }
 
-/* One question, alone, with room around it. Size and space carry the focus;
-   a poster weight made the card feel like an advert for the question rather
-   than an invitation to answer it. */
-.flashcard-front {
+.quiz-count {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.quiz-question {
   margin: 0;
   font-size: var(--text-lg);
   font-weight: 500;
@@ -2156,29 +2168,191 @@ summary:focus-visible {
   text-wrap: balance;
 }
 
-.flashcard-back {
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   margin: 0;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
-  font-size: var(--text-md);
-  line-height: 1.5;
+  padding: 0;
+  list-style: none;
 }
 
-.flashcard-hint {
-  margin: 0;
-  font-size: var(--text-sm);
+/* Unsets the global ink-filled button: four filled slabs read as four
+   actions, not one choice among four. Only the picked option takes the
+   accent. */
+.quiz-options .quiz-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
 }
 
-.flashcard-source {
+.quiz-options .quiz-option.is-selected,
+.quiz-options button.quiz-option.is-selected:hover:not(:disabled) {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.quiz-letter {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-soft);
 }
 
-.flashcard-source summary {
+.quiz-option.is-selected .quiz-letter {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-ink);
+}
+
+.quiz-option-text {
+  flex: 1;
+  padding-top: 0.1rem;
+}
+
+.quiz-controls {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.quiz-controls > :last-child {
+  justify-self: end;
+}
+
+.quiz-score {
+  padding: 2rem 1.5rem;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+.quiz-score-line {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.quiz-score-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  align-items: center;
+  margin-top: 1.25rem;
+}
+
+/* The review: every question with the answer marked. Colour is never the
+   only signal — the right answer also carries a check, a wrong pick a cross,
+   and the reader's own pick says so in words. */
+.quiz-review {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quiz-review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-2);
+}
+
+.quiz-review-item.is-right {
+  border-left-color: var(--ok);
+}
+
+.quiz-review-item.is-wrong {
+  border-left-color: var(--danger);
+}
+
+.quiz-review-item .quiz-question {
+  font-size: var(--text-md);
+}
+
+.quiz-options.is-review .quiz-option.is-correct {
+  background: var(--ok-tint);
+  border-color: var(--ok);
+}
+
+.quiz-options.is-review .quiz-option.is-correct .quiz-letter {
+  border-color: var(--ok);
+  color: var(--ok-text);
+}
+
+.quiz-options.is-review .quiz-option.is-wrong-pick {
+  background: var(--danger-tint);
+  border-color: var(--danger);
+}
+
+.quiz-options.is-review .quiz-option.is-wrong-pick .quiz-letter {
+  border-color: var(--danger);
+  color: var(--danger-text);
+}
+
+.quiz-tag {
+  flex: none;
+  align-self: center;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.quiz-mark {
+  flex: none;
+  align-self: center;
+}
+
+.quiz-option.is-correct .quiz-mark {
+  color: var(--ok-text);
+}
+
+.quiz-option.is-wrong-pick .quiz-mark {
+  color: var(--danger-text);
+}
+
+.quiz-explanation {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.quiz-source {
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.quiz-source summary {
   cursor: pointer;
 }
 
-.flashcard-source p {
+.quiz-source p {
   margin: 0.35rem 0 0;
   padding-left: 0.6rem;
   border-left: 2px solid var(--border);
@@ -2187,52 +2361,6 @@ summary:focus-visible {
   white-space: pre-wrap;
   max-height: 9rem;
   overflow-y: auto;
-}
-
-.flashcards-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.flashcards-position {
-  font-size: var(--text-sm);
-}
-
-.flashcards-grade {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.flashcards-grade button {
-  padding: 0.3rem 0.7rem;
-  font-size: var(--text-base);
-}
-
-.flashcards-score {
-  padding: 2rem 1.5rem;
-  text-align: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-}
-
-.flashcards-score-line {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-3xl);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-
-.flashcards-score-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  align-items: center;
-  margin-top: 1.25rem;
 }
 
 /* --- the annotation margin ---
@@ -2301,7 +2429,7 @@ summary:focus-visible {
 .toolbar-button,
 .theme-toggle,
 .source-card,
-.flashcard,
+.quiz-option,
 .slash-item,
 .mention-item {
   transition: background var(--dur-fast) var(--ease),
@@ -2324,11 +2452,9 @@ summary:focus-visible {
     color: var(--text);
   }
 
-  /* The card is the click target for revealing the answer, so it has to look
-     like one before it is clicked. */
-  .flashcard:hover {
+  .quiz-options button.quiz-option:hover:not(:disabled) {
     border-color: var(--border-strong);
-    box-shadow: var(--shadow-lift);
+    background: var(--surface-hover);
   }
 }
 
@@ -2340,7 +2466,7 @@ summary:focus-visible {
   transition-duration: 40ms;
 }
 
-.flashcard:active {
+.quiz-options button.quiz-option:active {
   transform: translateY(1px);
   transition-duration: 40ms;
 }
@@ -2373,7 +2499,7 @@ summary:focus-visible {
   /* The global rule makes these jumps instead of moves, which is worse than
      either; a surface that asked for stillness gets none of them. */
   button:active:not(:disabled),
-  .flashcard:active,
+  .quiz-options button.quiz-option:active,
   .space-card:hover,
   .source-retry:hover svg,
   .upload-zone:hover .upload-mark,
@@ -2414,7 +2540,7 @@ summary:focus-visible {
    it is a locator, not a label. */
 .source-meta,
 .comment-time,
-.flashcards-position,
+.quiz-count,
 .document-item,
 .presence-chip,
 .annotation-index {
@@ -2757,8 +2883,8 @@ summary:focus-visible {
 .with-icon,
 .toolbar-button,
 .annotation-actions button,
-.flashcards-controls button,
-.flashcards-score-actions button,
+.quiz-controls button,
+.quiz-score-actions button,
 .document-item,
 .documents-head button {
   display: inline-flex;
@@ -3117,8 +3243,7 @@ summary:focus-visible {
 .mention-item,
 .row-menu-item,
 .document-item,
-.outline-item,
-.flashcards-modes button {
+.outline-item {
   background: none;
 }
 
@@ -3978,7 +4103,7 @@ summary:focus-visible {
   }
 
   .study-guide,
-  .flashcards {
+  .quiz {
     padding: 1.5rem 1rem 3rem;
   }
 }
@@ -4840,7 +4965,7 @@ summary:focus-visible {
   font-size: var(--text-sm);
 }
 
-/* A study guide or deck being written. The label carries the percentage;
+/* A study guide or quiz being written. The label carries the percentage;
    the bar along the bottom edge is the same number, for a glance. Kept
    inside the button so the toolbar does not change height or reflow as a
    job starts and ends. */
