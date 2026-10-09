@@ -94,7 +94,7 @@ def delete_document(
     """Delete a document and everything anchored to it.
 
     The foreign keys cascade: suggestions, agent_requests, study_guides,
-    flashcard_sets and comments all go with it. That is a lot to lose on a
+    quizzes and comments all go with it. That is a lot to lose on a
     misclick, so the UI confirms first.
 
     A space must keep at least one document. Without this the editor would

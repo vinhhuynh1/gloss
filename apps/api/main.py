@@ -8,7 +8,7 @@ from routers import (
     chat,
     comments,
     documents,
-    flashcards,
+    quizzes,
     sources,
     study_guides,
     study_spaces,
@@ -43,7 +43,7 @@ app.include_router(sources.router)
 app.include_router(suggestions.router)
 app.include_router(study_guides.router)
 app.include_router(comments.router)
-app.include_router(flashcards.router)
+app.include_router(quizzes.router)
 app.include_router(chat.router)
 
 # Mounted only when DEV_AUTH_SECRET is set, so a deployment that simply does
