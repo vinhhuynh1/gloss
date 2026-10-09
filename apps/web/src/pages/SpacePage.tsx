@@ -10,9 +10,9 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DocumentList from "../components/DocumentList";
 import DocumentOutline from "../components/DocumentOutline";
 import Editor from "../components/Editor";
-import FlashcardsView from "../components/FlashcardsView";
 import Orb from "../components/Orb";
 import PresenceBar from "../components/PresenceBar";
+import QuizView from "../components/QuizView";
 import ShareDialog from "../components/ShareDialog";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
@@ -25,16 +25,16 @@ import { applySuggestion } from "../lib/applySuggestion";
 import { insertNotes } from "../lib/notesToDoc";
 import { useCollabProvider } from "../lib/useCollabProvider";
 import { useComments } from "../lib/useComments";
-import { useFlashcards } from "../lib/useFlashcards";
+import { useQuiz } from "../lib/useQuiz";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import { documentIdFromRoute, navigate, useHashRoute } from "../lib/useHashRoute";
 import {
   IconAgent,
   IconBack,
-  IconCards,
   IconInvite,
   IconNext,
+  IconQuiz,
 } from "../components/Icon";
 import type {
   AnchoredAnnotation,
@@ -213,15 +213,16 @@ function Workspace({
   const [showGuide, setShowGuide] = useState(false);
 
   const {
-    row: deckRow,
-    deck,
-    error: deckError,
-    asking: askingDeck,
-    running: deckRunning,
-    workerSuspect: deckWorkerSuspect,
-    ask: askDeck,
-  } = useFlashcards(documentId);
-  const [showDeck, setShowDeck] = useState(false);
+    row: quizRow,
+    quiz,
+    quizId,
+    error: quizError,
+    asking: askingQuiz,
+    running: quizRunning,
+    workerSuspect: quizWorkerSuspect,
+    ask: askQuiz,
+  } = useQuiz(documentId);
+  const [showQuiz, setShowQuiz] = useState(false);
 
   /** The notes as the worker wants them.
    *
@@ -245,12 +246,12 @@ function Workspace({
     void askGuide(notes);
   }, [readNotes, askGuide]);
 
-  const requestDeck = useCallback(() => {
+  const requestQuiz = useCallback(() => {
     const notes = readNotes();
     if (notes === null) return;
-    if (notes.trim() !== "") setShowDeck(true);
-    void askDeck(notes);
-  }, [readNotes, askDeck]);
+    if (notes.trim() !== "") setShowQuiz(true);
+    void askQuiz(notes);
+  }, [readNotes, askQuiz]);
 
   if (showGuide && guide) {
     return (
@@ -262,12 +263,13 @@ function Workspace({
     );
   }
 
-  if (showDeck && deck) {
+  if (showQuiz && quiz) {
     return (
-      <FlashcardsView
-        deck={deck}
-        generatedAt={deckRow?.finished_at ?? null}
-        onClose={() => setShowDeck(false)}
+      <QuizView
+        key={quizId ?? undefined}
+        quiz={quiz}
+        generatedAt={quizRow?.finished_at ?? null}
+        onClose={() => setShowQuiz(false)}
       />
     );
   }
@@ -304,25 +306,25 @@ function Workspace({
           </button>
         )}
         <GenerateButton
-          label="Flashcards"
-          runningLabel="Writing flashcards…"
-          row={deckRow}
-          running={deckRunning}
-          disabled={!editor || askingDeck || deckRunning}
-          onClick={requestDeck}
+          label="Quiz"
+          runningLabel="Writing quiz…"
+          row={quizRow}
+          running={quizRunning}
+          disabled={!editor || askingQuiz || quizRunning}
+          onClick={requestQuiz}
         />
-        {deck && !deckRunning && (
+        {quiz && !quizRunning && (
           <button
             className="result-chip is-agent"
-            onClick={() => setShowDeck(true)}
-            title={`Open "${deck.title}"`}
+            onClick={() => setShowQuiz(true)}
+            title={`Open "${quiz.title}"`}
           >
-            <IconCards className="result-chip-mark" />
+            <IconQuiz className="result-chip-mark" />
             <span className="result-chip-text">
-              <span className="result-chip-title">{deck.title}</span>
+              <span className="result-chip-title">{quiz.title}</span>
               <span className="result-chip-meta">
-                {deck.cards.length} quiz cards ·{" "}
-                {ago(deckRow?.finished_at ?? null)}
+                {quiz.questions.length} questions ·{" "}
+                {ago(quizRow?.finished_at ?? null)}
               </span>
             </span>
             <IconNext className="result-chip-go" />
@@ -332,13 +334,13 @@ function Workspace({
             succeeded, so nothing looks broken, and a stopped worker is the
             most common local-setup mistake. One hint for both queues — they
             share a worker, so if one is stuck the other is too. */}
-        {(workerSuspect || deckWorkerSuspect) && (
+        {(workerSuspect || quizWorkerSuspect) && (
           <span className="muted">
             Still queued. Is the agent worker running?
           </span>
         )}
         {guideError && <span className="error">{guideError}</span>}
-        {deckError && <span className="error">{deckError}</span>}
+        {quizError && <span className="error">{quizError}</span>}
       </div>
 
       <div className="app-layout">
@@ -693,7 +695,7 @@ export default function SpacePage({
       )}
 
       {/* Everything anchored to the document goes with it — suggestions,
-          comments, guides, decks — and the API refuses the last document in a
+          comments, guides, quizzes — and the API refuses the last document in a
           space with a 409, so the rail disables the item in that case. */}
       {pendingDelete && (
         <ConfirmDialog

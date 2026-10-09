@@ -1,5 +1,5 @@
 /**
- * Asking for a flashcard deck and waiting for it.
+ * Asking for a quiz and waiting for it.
  *
  * The same hook as useStudyGuide with a different noun, including every fix
  * that one has accumulated. Two in particular are not cosmetic:
@@ -7,36 +7,41 @@
  * - A hidden tab parks the loop **without** a timer, and the visibility
  *   listener restarts it. Parking on a timer is what made the guide look
  *   frozen: browsers throttle timers in a backgrounded tab to roughly once a
- *   minute, and a deck takes long enough that switching away while it runs is
+ *   minute, and a quiz takes long enough that switching away while it runs is
  *   the normal path.
  * - A `done` row whose content fetch fails retries instead of ending the
- *   loop. Ending there left the deck null with a reload as the only way out.
+ *   loop. Ending there left the quiz null with a reload as the only way out.
  *
- * Two calls, not one. The poll asks only for status; the deck is fetched once
- * after. `notes` and `cards` are deferred columns on the server, so a poll
- * that returned the deck would drag every card and every cited excerpt out of
- * Postgres every two seconds to say "still working".
+ * Two calls, not one. The poll asks only for status; the quiz is fetched once
+ * after. `notes` and `questions` are deferred columns on the server, so a poll
+ * that returned the quiz would drag every question and every cited excerpt
+ * out of Postgres every two seconds to say "still working".
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, apiFetch } from "./api";
-import type { Deck, FlashcardsRow, FlashcardsStatusRow } from "./types";
+import type { Quiz, QuizRow, QuizStatusRow } from "./types";
 
 const POLL_MS = 2000;
 const MAX_RETRY_MS = 30_000;
 
-/** How long a deck may sit unstarted before we stop blaming latency and
+/** How long a quiz may sit unstarted before we stop blaming latency and
  * suggest the worker isn't running. Same reasoning and roughly the same
  * number as useStudyGuide's. */
 export const WORKER_SUSPECT_MS = 25_000;
 
-function isSettled(status: FlashcardsStatusRow["status"]): boolean {
+function isSettled(status: QuizStatusRow["status"]): boolean {
   return status === "done" || status === "failed";
 }
 
-export function useFlashcards(documentId: string) {
-  const [row, setRow] = useState<FlashcardsStatusRow | null>(null);
-  const [deck, setDeck] = useState<Deck | null>(null);
+export function useQuiz(documentId: string) {
+  const [row, setRow] = useState<QuizStatusRow | null>(null);
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  // The row `quiz` was read from. Not row.id: the poll moves `row` to the
+  // newest request the moment someone asks for another quiz, while `quiz`
+  // keeps the old content until the new one is done. The view is keyed on
+  // this, so answers never outlive the questions they were given against.
+  const [quizId, setQuizId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [pollToken, setPollToken] = useState(0);
@@ -50,26 +55,26 @@ export function useFlashcards(documentId: string) {
 
     async function tick() {
       // Parks with no timer; onVisible below restarts it. Never on the first
-      // run, so a tab opened in the background still has its finished deck
+      // run, so a tab opened in the background still has its finished quiz
       // ready when it is looked at.
       if (document.hidden && !first) return;
       first = false;
 
-      let status: FlashcardsStatusRow;
+      let status: QuizStatusRow;
       try {
-        status = await apiFetch<FlashcardsStatusRow>(
-          `/documents/${documentId}/flashcards`
+        status = await apiFetch<QuizStatusRow>(
+          `/documents/${documentId}/quiz`
         );
       } catch (err) {
         if (!active) return;
-        // A document nobody has asked about yet has no deck, which is the
+        // A document nobody has asked about yet has no quiz, which is the
         // normal starting state rather than something to report.
         if (err instanceof ApiError && err.status === 404) {
           setRow(null);
           return;
         }
         setFetchError(
-          err instanceof Error ? err.message : "Could not load the flashcards"
+          err instanceof Error ? err.message : "Could not load the quiz"
         );
         failures += 1;
         timer = window.setTimeout(tick, Math.min(POLL_MS * 2 ** failures, MAX_RETRY_MS));
@@ -80,7 +85,7 @@ export function useFlashcards(documentId: string) {
       failures = 0;
       setRow(status);
       setFetchError(null);
-      // Someone who reloads while a deck is running never went through ask(),
+      // Someone who reloads while a quiz is running never went through ask(),
       // so without this the "is the worker running?" hint could never appear
       // for them.
       if (!isSettled(status.status) && askedAt.current === null) {
@@ -92,19 +97,20 @@ export function useFlashcards(documentId: string) {
         // Its own try: a 404 here is not "nothing has been asked for". The
         // status call reports the newest row whatever its state, while
         // /content insists the newest row is done, so another member asking
-        // for a fresh deck between the two calls 404s this one.
+        // for a fresh quiz between the two calls 404s this one.
         try {
-          const full = await apiFetch<FlashcardsRow>(
-            `/documents/${documentId}/flashcards/content`
+          const full = await apiFetch<QuizRow>(
+            `/documents/${documentId}/quiz/content`
           );
           if (!active) return;
-          setDeck(full.cards);
+          setQuiz(full.questions);
+          setQuizId(full.id);
         } catch (err) {
           if (!active) return;
           contentFailed = true;
           failures += 1;
           setFetchError(
-            err instanceof Error ? err.message : "Could not load the flashcards"
+            err instanceof Error ? err.message : "Could not load the quiz"
           );
         }
       }
@@ -147,7 +153,7 @@ export function useFlashcards(documentId: string) {
       // just wants to be told the page is blank.
       if (notes.trim() === "") {
         setFetchError(
-          "There are no notes to make flashcards from yet. Write something first."
+          "There are no notes to make a quiz from yet. Write something first."
         );
         return;
       }
@@ -155,11 +161,12 @@ export function useFlashcards(documentId: string) {
       setAsking(true);
       setFetchError(null);
       try {
-        // Cleared before the request: leaving the old deck on screen while a
+        // Cleared before the request: leaving the old quiz on screen while a
         // new one is written reads as though nothing happened.
-        setDeck(null);
-        const created = await apiFetch<FlashcardsStatusRow>(
-          `/documents/${documentId}/flashcards`,
+        setQuiz(null);
+        setQuizId(null);
+        const created = await apiFetch<QuizStatusRow>(
+          `/documents/${documentId}/quiz`,
           { method: "POST", body: JSON.stringify({ notes }) }
         );
         setRow(created);
@@ -167,7 +174,7 @@ export function useFlashcards(documentId: string) {
         setPollToken((n) => n + 1);
       } catch (err) {
         setFetchError(
-          err instanceof Error ? err.message : "Could not start the flashcards"
+          err instanceof Error ? err.message : "Could not start the quiz"
         );
       } finally {
         setAsking(false);
@@ -178,12 +185,12 @@ export function useFlashcards(documentId: string) {
 
   const running = row !== null && !isSettled(row.status);
 
-  // A deck the worker gave up on is a failure the person who clicked has to
+  // A quiz the worker gave up on is a failure the person who clicked has to
   // see. Nothing else renders row.error.
   const error =
     fetchError ??
     (row?.status === "failed"
-      ? row.error ?? "The flashcards could not be written."
+      ? row.error ?? "The quiz could not be written."
       : null);
 
   const workerSuspect =
@@ -192,5 +199,5 @@ export function useFlashcards(documentId: string) {
     askedAt.current !== null &&
     Date.now() - askedAt.current > WORKER_SUSPECT_MS;
 
-  return { row, deck, error, asking, running, workerSuspect, ask };
+  return { row, quiz, quizId, error, asking, running, workerSuspect, ask };
 }

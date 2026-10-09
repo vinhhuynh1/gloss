@@ -1,5 +1,5 @@
 """
-Progress on a running study guide or flashcard deck, for the status polls.
+Progress on a running study guide or quiz, for the status polls.
 
 The columns come from infra/migrations/012_generation_progress.sql, and the
 API deploys on a merge while migrations are applied by hand — the gap that
@@ -14,7 +14,7 @@ import uuid
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-_TABLES = ("study_guides", "flashcard_sets")
+_TABLES = ("study_guides", "quizzes")
 
 # Flipped once the columns have been seen, and never checked again — the same
 # device as the table guards in routers/study_guides.py.

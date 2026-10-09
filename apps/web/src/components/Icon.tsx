@@ -37,6 +37,7 @@ import {
   FilePdf,
   FileText,
   ListBullets,
+  ListChecks,
   ListNumbers,
   Monitor,
   Moon,
@@ -45,7 +46,6 @@ import {
   Plus,
   Quotes,
   SignOut,
-  Stack,
   Sun,
   TextB,
   TextHOne,
@@ -104,7 +104,7 @@ export const IconRedo = wrap(ArrowUUpRight);
 /* A quill, not sparkles: the agent writes in the margin, it does not do magic. */
 export const IconAgent = wrap(Feather);
 export const IconComment = wrap(ChatCenteredText);
-export const IconCards = wrap(Stack);
+export const IconQuiz = wrap(ListChecks);
 /* Send, in the chat bar. Up rather than a paper plane: it is the one action
    the bar has, and an arrow reads as "go" without a label. */
 export const IconSend = wrap(ArrowUp);

@@ -1,5 +1,5 @@
 """
-Progress for study guides and flashcard decks while they are written.
+Progress for study guides and quizzes while they are written.
 
 Both are a retrieval per section of the notes, then one long model call that
 returns structured JSON. The retrieval half is counted exactly — one step per
