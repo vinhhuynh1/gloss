@@ -43,6 +43,7 @@ QUIZ_SCHEMA = {
                     "correct_index": {"type": "integer"},
                     "explanation": {"type": "string"},
                     "source_chunk_id": {"type": "string"},
+                    "section": {"type": "string"},
                 },
                 "required": [
                     "question",
@@ -50,6 +51,7 @@ QUIZ_SCHEMA = {
                     "correct_index",
                     "explanation",
                     "source_chunk_id",
+                    "section",
                 ],
                 "additionalProperties": False,
             },
@@ -88,7 +90,9 @@ def _valid_index(value) -> bool:
     )
 
 
-def _validate_quiz(result: dict, chunks: list[dict]) -> dict:
+def _validate_quiz(
+    result: dict, chunks: list[dict], sections: list[str] | None = None
+) -> dict:
     """Drop every question the model could not ground or did not finish.
 
     Same rule as _validate_guide: a question citing a chunk that was never
@@ -96,10 +100,18 @@ def _validate_quiz(result: dict, chunks: list[dict]) -> dict:
     missing question because it looks checked. A shorter quiz is the honest
     outcome.
 
+    The same goes for `section` when a list was given: a heading that is not
+    in the notes would file the result under something the reader never
+    wrote. Matching ignores case and surrounding space, and stores the
+    heading as the notes spell it, so one section is never counted twice.
+
     Citation metadata is denormalized onto each question so it still says
     where the answer came from after the next re-chunk.
     """
     by_id = {c["id"]: c for c in chunks}
+    by_heading = (
+        {s.strip().casefold(): s for s in sections} if sections else None
+    )
 
     questions = []
     for item in result.get("questions", []):
@@ -114,18 +126,22 @@ def _validate_quiz(result: dict, chunks: list[dict]) -> dict:
             continue
         if not _valid_index(correct_index):
             continue
-        questions.append(
-            {
-                "question": question,
-                "options": options,
-                "correct_index": correct_index,
-                "explanation": explanation,
-                "source_chunk_id": chunk["id"],
-                "source_filename": chunk["filename"],
-                "source_page_ref": chunk["page_ref"],
-                "source_excerpt": chunk["text"],
-            }
-        )
+        entry = {
+            "question": question,
+            "options": options,
+            "correct_index": correct_index,
+            "explanation": explanation,
+            "source_chunk_id": chunk["id"],
+            "source_filename": chunk["filename"],
+            "source_page_ref": chunk["page_ref"],
+            "source_excerpt": chunk["text"],
+        }
+        if by_heading is not None:
+            section = by_heading.get((item.get("section") or "").strip().casefold())
+            if section is None:
+                continue
+            entry["section"] = section
+        questions.append(entry)
 
     return {
         "title": (result.get("title") or "").strip() or "Quiz",
@@ -154,13 +170,14 @@ def call_llm(
     chunks: list[dict],
     report: progress.Report = progress.ignore,
     rng: random.Random | None = None,
+    sections: list[str] | None = None,
 ) -> dict:
     # Streamed for progress, as study_guide.call_llm is. A question with four
     # options and an explanation runs long for its notes, hence
     # the larger per-character estimate.
     text, stop_reason = progress.stream_structured(
         system=QUIZ_SYSTEM_PROMPT,
-        content=build_quiz_prompt(notes, chunks),
+        content=build_quiz_prompt(notes, chunks, sections),
         schema=QUIZ_SCHEMA,
         report=report,
         expected=progress.expected_chars(notes, per_note_char=2.5, floor=5000, ceiling=40000),
@@ -174,27 +191,33 @@ def call_llm(
     if text is None:
         raise ValueError(f"No text block in response (stop_reason={stop_reason!r})")
 
-    quiz = _validate_quiz(json.loads(text), chunks)
+    quiz = _validate_quiz(json.loads(text), chunks, sections)
     rng = rng or random.Random()
     quiz["questions"] = [_shuffle_options(q, rng) for q in quiz["questions"]]
     return quiz
 
 
 def generate(
-    study_space_id: str, notes: str, report: progress.Report = progress.ignore
+    study_space_id: str,
+    notes: str,
+    report: progress.Report = progress.ignore,
+    sections: list[str] | None = None,
 ) -> tuple[dict, list[dict]]:
     """One quiz. Returns it with the chunks it was given, so a caller that
     wants to score the grounding can see both - same signature as
-    study_guide.generate."""
-    sections = split_sections(notes)
-    if not sections:
+    study_guide.generate.
+
+    `sections` is the notes headings questions are filed under; the blocks
+    split here are only retrieval queries, and are kept apart from it."""
+    blocks = split_sections(notes)
+    if not blocks:
         raise EmptyNotesError("There are no notes in this document yet.")
 
-    chunks = retrieve_for_notes(study_space_id, sections, report)
+    chunks = retrieve_for_notes(study_space_id, blocks, report)
     if not chunks:
         raise EmptyNotesError(
             "No source material has been ingested for this study space yet, "
             "so there is nothing to ground a quiz in."
         )
 
-    return call_llm(notes, chunks, report), chunks
+    return call_llm(notes, chunks, report, sections=sections), chunks

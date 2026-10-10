@@ -34,6 +34,7 @@ ALTER TABLE public.comment_mentions    ENABLE ROW LEVEL SECURITY;
 -- re-run after every migration, before and after 014 alike.
 ALTER TABLE IF EXISTS public.flashcard_sets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.quizzes        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.quiz_attempts  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages       ENABLE ROW LEVEL SECURITY;
 
 -- Verify with:

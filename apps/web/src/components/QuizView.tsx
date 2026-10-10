@@ -7,13 +7,16 @@
  * changed freely until Submit, and nothing on the page hints at the answer
  * before it — not even the citation, because a filename can give it away.
  *
- * Nothing is saved. The score lives in this component and is gone when the
- * view closes; Retake is the way to try again.
+ * Submitting saves the attempt through `onSubmit`, in the background: the
+ * score is shown straight away from the answers in hand, and a save that
+ * fails says so in one line rather than taking the score away. Each submit
+ * is its own attempt, retakes included; the API keeps the latest per quiz for
+ * weak spots.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatChem } from "../lib/chem";
-import type { Quiz, QuizQuestion } from "../lib/types";
+import type { Quiz, QuizQuestion, WeakSpot } from "../lib/types";
 import {
   IconAccept,
   IconDismiss,
@@ -54,10 +57,16 @@ export default function QuizView({
   quiz,
   generatedAt,
   onClose,
+  onSubmit,
+  weakSpots = [],
+  onPractise,
 }: {
   quiz: Quiz;
   generatedAt: string | null;
   onClose: () => void;
+  onSubmit?: (answers: number[]) => Promise<void>;
+  weakSpots?: WeakSpot[];
+  onPractise?: () => void;
 }) {
   const questions = quiz.questions;
   const total = questions.length;
@@ -66,6 +75,7 @@ export default function QuizView({
   // not been answered yet, which is what keeps Submit locked.
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const remaining = total - Object.keys(answers).length;
   const score = useMemo(
@@ -95,7 +105,11 @@ export default function QuizView({
     if (remaining > 0) return;
     setSubmitted(true);
     window.scrollTo({ top: 0 });
-  }, [remaining]);
+    if (onSubmit) {
+      setSaveFailed(false);
+      onSubmit(questions.map((_, i) => answers[i])).catch(() => setSaveFailed(true));
+    }
+  }, [remaining, onSubmit, questions, answers]);
 
   const retake = useCallback(() => {
     setAnswers({});
@@ -110,6 +124,8 @@ export default function QuizView({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+      // Ctrl+1 switches browser tabs; it must not also pick answer A.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       if (e.key === "Escape") {
         onClose();
@@ -165,12 +181,35 @@ export default function QuizView({
               ? "Every one. Come back to it tomorrow rather than now. That is what makes it stick."
               : `${total - score} to go back over below.`}
           </p>
+          {saveFailed && (
+            <p className="muted">This result wasn&apos;t saved.</p>
+          )}
           <div className="quiz-score-actions">
             <button onClick={retake}>
               <IconRestart />
               Retake
             </button>
           </div>
+          {weakSpots.some((w) => w.weak) && (
+            <div className="quiz-weak">
+              <h2>Worth another look</h2>
+              <ul>
+                {weakSpots
+                  .filter((w) => w.weak)
+                  .map((w) => (
+                    <li key={w.section}>
+                      <span>{w.section}</span>
+                      <span className="muted">
+                        {w.correct}/{w.asked}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+              {onPractise && (
+                <button onClick={onPractise}>Practise these</button>
+              )}
+            </div>
+          )}
         </div>
 
         <ol className="quiz-review">

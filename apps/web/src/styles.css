@@ -2105,37 +2105,54 @@ summary:focus-visible {
 
 /* Where you are and what is left, at a glance. Answered fills, current gets
    a ring, so the two read separately when they coincide. */
+/* The button is a 1.5rem (24px) tap target; the visible dot inside it is
+   drawn by ::before. Negative margin keeps the first dot flush left. */
 .quiz-dots {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 1rem;
+  margin: 0 0 1rem -0.4rem;
 }
 
 .quiz-dots button.quiz-dot {
-  width: 0.7rem;
-  height: 0.7rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
   padding: 0;
-  border: 1px solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius-pill);
   background: transparent;
+  box-shadow: none;
 }
 
-.quiz-dots button.quiz-dot.is-answered {
+.quiz-dots button.quiz-dot::before {
+  content: "";
+  width: 0.7rem;
+  height: 0.7rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.quiz-dots button.quiz-dot.is-answered::before {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.quiz-dots button.quiz-dot.is-current {
+.quiz-dots button.quiz-dot.is-current::before {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-border);
 }
 
 @media (hover: hover) {
   .quiz-dots button.quiz-dot:hover:not(:disabled) {
+    background: transparent;
+  }
+
+  .quiz-dots button.quiz-dot:hover:not(:disabled)::before {
     background: var(--accent-tint-hover);
   }
 
-  .quiz-dots button.quiz-dot.is-answered:hover:not(:disabled) {
+  .quiz-dots button.quiz-dot.is-answered:hover:not(:disabled)::before {
     background: var(--accent);
   }
 }
@@ -5009,4 +5026,36 @@ summary:focus-visible {
 .orb {
   flex-shrink: 0;
   vertical-align: middle;
+}
+
+/* Weak-spot marker in the outline: "3/8" right in your quizzes. Text rather
+   than a coloured dot, so it reads without colour and to a screen reader. */
+.outline-weak {
+  margin-left: 0.4rem;
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.quiz-weak {
+  margin-top: 1.25rem;
+}
+
+.quiz-weak h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.quiz-weak ul {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.quiz-weak li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  font-variant-numeric: tabular-nums;
 }

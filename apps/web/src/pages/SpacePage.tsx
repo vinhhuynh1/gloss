@@ -1,5 +1,5 @@
 import type { Editor as TiptapEditor } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
@@ -25,7 +25,10 @@ import { applySuggestion } from "../lib/applySuggestion";
 import { insertNotes } from "../lib/notesToDoc";
 import { useCollabProvider } from "../lib/useCollabProvider";
 import { useComments } from "../lib/useComments";
+import { type Doc, headingEntries, sectionHeadings, sectionText } from "../lib/sections";
+import { usePracticeQuiz } from "../lib/usePracticeQuiz";
 import { useQuiz } from "../lib/useQuiz";
+import { useWeakSpots } from "../lib/useWeakSpots";
 import { useStudyGuide } from "../lib/useStudyGuide";
 import { useSuggestions } from "../lib/useSuggestions";
 import { documentIdFromRoute, navigate, useHashRoute } from "../lib/useHashRoute";
@@ -72,6 +75,10 @@ function ago(iso: string | null): string {
  * tooltip. Without migration 012 there is no percentage, and the button says
  * what it always said.
  */
+/** apps/api/schemas.py MAX_NOTES_CHARS. A practice request over it would be a
+ * 422 the reader can do nothing about, so the text is trimmed instead. */
+const MAX_NOTES_CHARS = 40_000;
+
 function GenerateButton({
   label,
   runningLabel,
@@ -224,6 +231,65 @@ function Workspace({
   } = useQuiz(documentId);
   const [showQuiz, setShowQuiz] = useState(false);
 
+  const { spots: weakSpots, refresh: refreshWeakSpots } = useWeakSpots(documentId);
+
+  const saveAttempt = useCallback(
+    async (id: string, answers: number[]) => {
+      await apiFetch(`/quizzes/${id}/attempts`, {
+        method: "POST",
+        body: JSON.stringify({ answers }),
+      });
+      await refreshWeakSpots();
+    },
+    [refreshWeakSpots]
+  );
+
+  /** The notes as last seen. An open quiz replaces the workspace, which
+   * unmounts the editor and sets `editor` to null, and the score screen still
+   * needs the headings (for "Worth another look") and the text (for a
+   * practice quiz). ProseMirror documents are immutable, so holding the last
+   * one is safe. */
+  const lastDoc = useRef<Doc | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    const remember = () => {
+      lastDoc.current = editor.state.doc;
+    };
+    remember();
+    editor.on("update", remember);
+    return () => {
+      editor.off("update", remember);
+    };
+  }, [editor]);
+  const currentDoc = useCallback(
+    () => editor?.state.doc ?? lastDoc.current,
+    [editor]
+  );
+
+  /** Weak spots whose heading is still in the notes. Read at call time: this
+   * component does not re-render on every edit, so a value computed once
+   * would go stale as headings are renamed. */
+  const weakNow = useCallback(() => {
+    const doc = currentDoc();
+    if (!doc) return [];
+    const present = new Set(headingEntries(doc).map((e) => e.text.toLowerCase()));
+    return weakSpots.filter((w) => w.weak && present.has(w.section.toLowerCase()));
+  }, [currentDoc, weakSpots]);
+
+  const practice = usePracticeQuiz(documentId);
+  const [showPractice, setShowPractice] = useState(false);
+
+  const startPractice = useCallback(() => {
+    const doc = currentDoc();
+    if (!doc) return;
+    const headings = weakNow().map((w) => w.section);
+    if (headings.length === 0) return;
+    const notes = sectionText(doc, headings).slice(0, MAX_NOTES_CHARS);
+    setShowQuiz(false);
+    setShowPractice(true);
+    void practice.start(notes, headings);
+  }, [currentDoc, weakNow, practice]);
+
   /** The notes as the worker wants them.
    *
    * textBetween with a "\n\n" block separator, not getText(): both generators
@@ -248,10 +314,10 @@ function Workspace({
 
   const requestQuiz = useCallback(() => {
     const notes = readNotes();
-    if (notes === null) return;
+    if (notes === null || !editor) return;
     if (notes.trim() !== "") setShowQuiz(true);
-    void askQuiz(notes);
-  }, [readNotes, askQuiz]);
+    void askQuiz(notes, sectionHeadings(editor.state.doc));
+  }, [readNotes, askQuiz, editor]);
 
   if (showGuide && guide) {
     return (
@@ -263,6 +329,20 @@ function Workspace({
     );
   }
 
+  if (showPractice && practice.quiz) {
+    return (
+      <QuizView
+        key={practice.quizId ?? undefined}
+        quiz={{ ...practice.quiz, title: `Practice: ${practice.quiz.title}` }}
+        generatedAt={practice.row?.finished_at ?? null}
+        onClose={() => setShowPractice(false)}
+        onSubmit={(answers) => saveAttempt(practice.quizId!, answers)}
+        weakSpots={weakNow()}
+        onPractise={startPractice}
+      />
+    );
+  }
+
   if (showQuiz && quiz) {
     return (
       <QuizView
@@ -270,6 +350,9 @@ function Workspace({
         quiz={quiz}
         generatedAt={quizRow?.finished_at ?? null}
         onClose={() => setShowQuiz(false)}
+        onSubmit={(answers) => saveAttempt(quizId!, answers)}
+        weakSpots={weakNow()}
+        onPractise={startPractice}
       />
     );
   }
@@ -330,6 +413,33 @@ function Workspace({
             <IconNext className="result-chip-go" />
           </button>
         )}
+        {(weakNow().length > 0 || practice.running) && (
+          <GenerateButton
+            label={`Practise weak spots (${weakNow().length})`}
+            runningLabel="Writing practice quiz…"
+            row={practice.row}
+            running={practice.running}
+            disabled={!editor || practice.asking || practice.running}
+            onClick={startPractice}
+          />
+        )}
+        {practice.quiz && !practice.running && (
+          <button
+            className="result-chip is-agent"
+            onClick={() => setShowPractice(true)}
+            title={`Open "Practice: ${practice.quiz.title}"`}
+          >
+            <IconQuiz className="result-chip-mark" />
+            <span className="result-chip-text">
+              <span className="result-chip-title">Practice: {practice.quiz.title}</span>
+              <span className="result-chip-meta">
+                {practice.quiz.questions.length} questions ·{" "}
+                {ago(practice.row?.finished_at ?? null)}
+              </span>
+            </span>
+            <IconNext className="result-chip-go" />
+          </button>
+        )}
         {/* Same reasoning as SourcesPanel's worker warning: the request
             succeeded, so nothing looks broken, and a stopped worker is the
             most common local-setup mistake. One hint for both queues — they
@@ -341,6 +451,7 @@ function Workspace({
         )}
         {guideError && <span className="error">{guideError}</span>}
         {quizError && <span className="error">{quizError}</span>}
+        {practice.error && <span className="error">{practice.error}</span>}
       </div>
 
       <div className="app-layout">
@@ -357,7 +468,7 @@ function Workspace({
             onRename={onRenameDocument}
             onDelete={onDeleteDocument}
           />
-          <DocumentOutline editor={editor} />
+          <DocumentOutline editor={editor} weakSpots={weakSpots} />
           {/* Sources stay per space, not per document: the corpus belongs to
               the course, so a citation found for week 6 is just as valid in
               week 7. */}

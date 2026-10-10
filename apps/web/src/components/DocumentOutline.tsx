@@ -18,27 +18,16 @@
 import type { Editor } from "@tiptap/react";
 import { useEffect, useReducer } from "react";
 
-interface Entry {
-  /** ProseMirror document position, which is also a stable React key within
-   * one render pass. */
-  pos: number;
-  level: number;
-  text: string;
-}
+import { headingEntries } from "../lib/sections";
+import type { WeakSpot } from "../lib/types";
 
-function headings(editor: Editor): Entry[] {
-  const found: Entry[] = [];
-  editor.state.doc.descendants((node, pos) => {
-    if (node.type.name !== "heading") return;
-    const text = node.textContent.trim();
-    // An empty heading is someone mid-thought on a fresh line. It would be a
-    // blank row that scrolls somewhere unexplained.
-    if (text) found.push({ pos, level: node.attrs.level as number, text });
-  });
-  return found;
-}
-
-export default function DocumentOutline({ editor }: { editor: Editor | null }) {
+export default function DocumentOutline({
+  editor,
+  weakSpots = [],
+}: {
+  editor: Editor | null;
+  weakSpots?: WeakSpot[];
+}) {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (!editor) return;
@@ -49,7 +38,12 @@ export default function DocumentOutline({ editor }: { editor: Editor | null }) {
   }, [editor]);
 
   if (!editor) return null;
-  const entries = headings(editor);
+  const entries = headingEntries(editor.state.doc);
+  // Lower-cased the way sections.ts keys them, so a weak spot recorded as
+  // "Glycolysis" still marks a heading since retyped as "glycolysis".
+  const weak = new Map(
+    weakSpots.filter((w) => w.weak).map((w) => [w.section.toLowerCase(), w])
+  );
 
   return (
     <nav className="outline-panel" aria-label="Document outline">
@@ -61,26 +55,37 @@ export default function DocumentOutline({ editor }: { editor: Editor | null }) {
         </p>
       ) : (
         <ul className="outline-list">
-          {entries.map((e) => (
-            <li key={e.pos}>
-              <button
-                className={`outline-item outline-level-${Math.min(e.level, 3)}`}
-                title={e.text}
-                onClick={() => {
-                  // Put the caret in the heading first: that is what makes
-                  // typing continue from where the reader just jumped to,
-                  // rather than wherever they were before.
-                  editor.chain().focus().setTextSelection(e.pos + 1).run();
-                  const dom = editor.view.domAtPos(e.pos + 1).node;
-                  const el =
-                    dom instanceof HTMLElement ? dom : dom.parentElement;
-                  el?.scrollIntoView({ block: "center", behavior: "smooth" });
-                }}
-              >
-                {e.text}
-              </button>
-            </li>
-          ))}
+          {entries.map((e) => {
+            const spot = weak.get(e.text.toLowerCase());
+            return (
+              <li key={e.pos}>
+                <button
+                  className={`outline-item outline-level-${Math.min(e.level, 3)}`}
+                  title={e.text}
+                  onClick={() => {
+                    // Put the caret in the heading first: that is what makes
+                    // typing continue from where the reader just jumped to,
+                    // rather than wherever they were before.
+                    editor.chain().focus().setTextSelection(e.pos + 1).run();
+                    const dom = editor.view.domAtPos(e.pos + 1).node;
+                    const el =
+                      dom instanceof HTMLElement ? dom : dom.parentElement;
+                    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+                  }}
+                >
+                  {e.text}
+                  {spot && (
+                    <span
+                      className="outline-weak"
+                      aria-label={`, ${spot.correct} of ${spot.asked} right in your quizzes`}
+                    >
+                      {spot.correct}/{spot.asked}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </nav>

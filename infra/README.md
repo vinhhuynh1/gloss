@@ -68,6 +68,7 @@ psql "$SUPABASE_DB_URL" -f infra/migrations/011_chat_modes.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/012_generation_progress.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/013_user_delete_cascade.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/014_quizzes.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/015_quiz_attempts.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
 ```
