@@ -163,6 +163,9 @@ export interface QuizQuestion {
   source_filename: string | null;
   source_page_ref: string | null;
   source_excerpt: string | null;
+  /** The notes heading this question tests. Absent on quizzes from before
+   * weak spots existed. */
+  section?: string;
 }
 
 export interface Quiz {
@@ -288,4 +291,19 @@ export interface ChatMessage {
   applied_by: string | null;
   /** On an answer, who asked. */
   requested_by: string | null;
+}
+
+/** One notes heading's totals for the signed-in person, from their latest
+ * attempt at each quiz. `weak` is decided by the API (apps/api/weak_spots.py)
+ * so the threshold lives in one place. */
+export interface WeakSpot {
+  section: string;
+  asked: number;
+  correct: number;
+  weak: boolean;
+}
+
+export interface AttemptResult {
+  score: number;
+  total: number;
 }

@@ -13,9 +13,10 @@ and a 404-for-everything API is materially harder to debug.
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from models import Document, Source, StudySpace, StudySpaceMember, User
+from models import Document, Quiz, Source, StudySpace, StudySpaceMember, User
 
 OWNER_ONLY = ("owner",)
 ANY_MEMBER = ("owner", "member")
@@ -86,3 +87,24 @@ def require_source(source_id: uuid.UUID, user: User, db: Session) -> Source:
     if membership is None:
         raise _forbidden()
     return source
+
+
+def require_quiz(quiz_id: uuid.UUID, user: User, db: Session) -> Quiz:
+    """
+    A quiz looked up by its own id, for the practice routes and attempts.
+
+    404 for everything, unlike the helpers above. A practice quiz is one
+    person's results in the making, and answering 403 to a groupmate would
+    tell them it exists. A non-member gets the same 404, so "not yours" and
+    "not there" cannot be told apart from outside.
+    """
+    not_found = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+    quiz = db.get(Quiz, quiz_id)
+    if quiz is None:
+        raise not_found
+    if quiz.personal_for is not None and quiz.personal_for != user.id:
+        raise not_found
+    space_id = db.scalar(select(Document.study_space_id).where(Document.id == quiz.document_id))
+    if db.get(StudySpaceMember, (space_id, user.id)) is None:
+        raise not_found
+    return quiz

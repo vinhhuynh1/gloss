@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 class ORMModel(BaseModel):
@@ -230,14 +230,69 @@ class StudyGuideOut(StudyGuideStatusOut):
     guide: dict | None
 
 
+# Notes headings sent with a quiz request; see 015_quiz_attempts.sql.
+MAX_SECTIONS = 100
+MAX_SECTION_CHARS = 200
+
+# No per-item length constraint: an overlong heading is dropped in
+# clean_sections rather than refused, because one pasted-sentence heading
+# must not cost the group its quiz over an optional field.
+SectionList = Annotated[list[str], Field(max_length=MAX_SECTIONS)]
+
+
+def clean_sections(value: list[str] | None) -> list[str] | None:
+    """Stripped, blank-free, deduplicated ignoring case (first spelling
+    wins), headings over MAX_SECTION_CHARS dropped, or None when nothing is
+    left. Two headings with the same text are one section."""
+    if value is None:
+        return None
+    seen: set[str] = set()
+    out: list[str] = []
+    for heading in value:
+        heading = heading.strip()
+        if len(heading) > MAX_SECTION_CHARS:
+            continue
+        if heading and heading.casefold() not in seen:
+            seen.add(heading.casefold())
+            out.append(heading)
+    return out or None
+
+
 class CreateQuiz(BaseModel):
     """Same body as CreateStudyGuide, and the same bound: the whole notes
     document, sent by the client because documents.crdt_snapshot is a Yjs
-    update nothing in Python can decode."""
+    update nothing in Python can decode. `sections` is the document's
+    headings, so each question can be filed under one; optional, so a tab
+    open from before it existed still works."""
 
     notes: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
     ]
+    sections: SectionList | None = None
+
+    @field_validator("sections")
+    @classmethod
+    def _clean(cls, value):
+        return clean_sections(value)
+
+
+class CreatePracticeQuiz(BaseModel):
+    """A practice quiz: `notes` is only the text under the weak headings,
+    and `sections` names them. At least one is required: a practice quiz
+    about nothing in particular is just the group quiz."""
+
+    notes: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
+    ]
+    sections: SectionList
+
+    @field_validator("sections")
+    @classmethod
+    def _clean(cls, value):
+        cleaned = clean_sections(value)
+        if not cleaned:
+            raise ValueError("Pick at least one section to practise.")
+        return cleaned
 
 
 class QuizStatusOut(ORMModel):
@@ -452,3 +507,25 @@ class DevLogin(BaseModel):
 class DevLoginOut(BaseModel):
     access_token: str
     user: UserOut
+
+
+class CreateAttempt(BaseModel):
+    """The chosen option per question, in question order. No score: the API
+    works it out from the stored answers."""
+
+    answers: Annotated[
+        list[Annotated[int, Field(ge=0, le=3)]],
+        Field(min_length=1, max_length=25),
+    ]
+
+
+class AttemptOut(BaseModel):
+    score: int
+    total: int
+
+
+class WeakSpotOut(BaseModel):
+    section: str
+    asked: int
+    correct: int
+    weak: bool

@@ -22,15 +22,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "./api";
 import type { Quiz, QuizRow, QuizStatusRow } from "./types";
 
-const POLL_MS = 2000;
-const MAX_RETRY_MS = 30_000;
+export const POLL_MS = 2000;
+export const MAX_RETRY_MS = 30_000;
 
 /** How long a quiz may sit unstarted before we stop blaming latency and
  * suggest the worker isn't running. Same reasoning and roughly the same
  * number as useStudyGuide's. */
 export const WORKER_SUSPECT_MS = 25_000;
 
-function isSettled(status: QuizStatusRow["status"]): boolean {
+export function isSettled(status: QuizStatusRow["status"]): boolean {
   return status === "done" || status === "failed";
 }
 
@@ -145,7 +145,7 @@ export function useQuiz(documentId: string) {
   }, [documentId, pollToken]);
 
   const ask = useCallback(
-    async (notes: string) => {
+    async (notes: string, sections?: string[]) => {
       // Refused here rather than by the API, for the same reason as the
       // guide: an empty document comes back 422, and a 422 is the one status
       // whose body FastAPI writes as a list of field errors. "notes: String
@@ -167,7 +167,7 @@ export function useQuiz(documentId: string) {
         setQuizId(null);
         const created = await apiFetch<QuizStatusRow>(
           `/documents/${documentId}/quiz`,
-          { method: "POST", body: JSON.stringify({ notes }) }
+          { method: "POST", body: JSON.stringify({ notes, sections }) }
         );
         setRow(created);
         askedAt.current = Date.now();
