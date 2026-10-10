@@ -8,6 +8,7 @@ from routers import (
     chat,
     comments,
     documents,
+    quiz_attempts,
     quizzes,
     sources,
     study_guides,
@@ -44,6 +45,8 @@ app.include_router(suggestions.router)
 app.include_router(study_guides.router)
 app.include_router(comments.router)
 app.include_router(quizzes.router)
+app.include_router(quizzes.by_id_router)
+app.include_router(quiz_attempts.router)
 app.include_router(chat.router)
 
 # Mounted only when DEV_AUTH_SECRET is set, so a deployment that simply does

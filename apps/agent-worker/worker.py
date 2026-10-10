@@ -445,9 +445,18 @@ def quizzes_available(conn) -> bool:
     same history: 005 was merged before it was applied and the worker
     crash-looped until someone noticed. Checked once at startup so a deploy
     that gets ahead of 014 costs the quiz queue and nothing else.
+
+    015 is part of the answer too: claim_next_quiz returns qz.sections, so a
+    database with the table but not that column would fail every claim.
     """
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.quizzes') IS NOT NULL")
+        if not cur.fetchone()[0]:
+            return False
+        cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'quizzes' AND column_name = 'sections')"
+        )
         return bool(cur.fetchone()[0])
 
 
@@ -561,7 +570,7 @@ def claim_next_quiz(conn):
                     LIMIT 1
              )
                AND d.id = qz.document_id
-         RETURNING qz.id, d.study_space_id, qz.notes, qz.attempts
+         RETURNING qz.id, d.study_space_id, qz.notes, qz.attempts, qz.sections
             """
         )
         return cur.fetchone()
@@ -586,13 +595,13 @@ def _fail_quiz(conn, quiz_id, attempts: int, message: str, *, retry: bool):
 
 def process_quiz(conn, row) -> bool:
     """Write one quiz for a claimed row. Returns True on success."""
-    quiz_id, study_space_id, notes, attempts = row
+    quiz_id, study_space_id, notes, attempts, sections = row
     print(f"Writing quiz {quiz_id}")
     report = _progress_reporter(conn, "quizzes", quiz_id, attempts)
     report(progress.STAGE_STARTING, 2)
 
     try:
-        result, _chunks = quiz.generate(str(study_space_id), notes, report)
+        result, _chunks = quiz.generate(str(study_space_id), notes, report, sections=sections)
     except study_guide.EmptyNotesError as exc:
         # Nothing to write from, and nothing a retry would change.
         _fail_quiz(conn, quiz_id, attempts, str(exc), retry=False)

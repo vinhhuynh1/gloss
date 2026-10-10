@@ -158,8 +158,8 @@ a set of retrieved excerpts from the course's own source material.
 
 The quiz covers THEIR NOTES, not the subject. Write questions for what the \
 notes cover. Do not introduce topics the notes do not raise, however important \
-they are to the subject — a quiz that quietly adds material stops being a test \
-of what this group decided to study, and the reader cannot tell the two apart.
+they are to the subject — a quiz that quietly adds material stops being a \
+record of what this group decided to study, and the reader cannot tell the two apart.
 
 Every question must be grounded in one retrieved excerpt, and you must give \
 that excerpt's chunk_id. A reader checking their result has to be able to \
@@ -190,6 +190,11 @@ Aim for about one question per key idea in the notes, and never more than 25. \
 A short document makes a short quiz; padding it with trivia teaches the reader \
 nothing.
 
+Each question also names the section of the notes it tests. When a SECTIONS \
+list is given, copy `section` exactly from that list: the heading whose text \
+the question is about. A question that fits no listed heading should not be \
+written. When no list is given, set `section` to an empty string.
+
 Respond with ONLY a JSON object matching this shape, no other text:
 {
   "title": "string, a short title for the quiz, drawn from what the notes are about",
@@ -199,17 +204,24 @@ Respond with ONLY a JSON object matching this shape, no other text:
       "options": ["string", "string", "string", "string"],
       "correct_index": "integer 0-3, the position of the correct option",
       "explanation": "string, why the correct answer is right",
-      "source_chunk_id": "string, the id of the excerpt this question is grounded in"
+      "source_chunk_id": "string, the id of the excerpt this question is grounded in",
+      "section": "string, the heading from SECTIONS this question tests"
     }
   ]
 }
 """ + FORMULA_RULE
 
 
-def build_quiz_prompt(notes: str, retrieved_chunks: list[dict]) -> str:
+def build_quiz_prompt(
+    notes: str, retrieved_chunks: list[dict], sections: list[str] | None = None
+) -> str:
+    listed = "\n".join(f"- {s}" for s in sections) if sections else "(none given)"
     return f"""\
 NOTES DOCUMENT:
 {notes}
+
+SECTIONS:
+{listed}
 
 RETRIEVED SOURCE EXCERPTS:
 {_format_excerpts(retrieved_chunks)}

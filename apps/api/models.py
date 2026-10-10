@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy import ForeignKey, Integer, LargeBinary, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -285,6 +285,28 @@ class Quiz(Base):
     questions: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # The notes headings the browser sent; each question's "section" is one
+    # of them. NULL on quizzes from before 015, which weak spots skip.
+    sections: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    # Set on a practice quiz: generated for this one person and visible only
+    # to them. NULL on the group's shared quiz.
+    personal_for: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
+
+class QuizAttempt(Base):
+    """One submitted quiz. Every submit is a row, retakes included; weak spots
+    are computed from the latest one per quiz. See 015."""
+
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    quiz_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("quizzes.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    answers: Mapped[list[int]] = mapped_column(ARRAY(SmallInteger))
+    score: Mapped[int] = mapped_column(SmallInteger)
+    submitted_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class ChatMessage(Base):

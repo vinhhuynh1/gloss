@@ -18,11 +18,11 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, undefer
 
 from auth import CurrentUser
-from authz import require_document
+from authz import require_document, require_quiz
 from database import get_db
 from generation_progress import progress_for
 from models import Quiz
-from schemas import CreateQuiz, QuizOut, QuizProgressOut, QuizStatusOut
+from schemas import CreatePracticeQuiz, CreateQuiz, QuizOut, QuizProgressOut, QuizStatusOut
 
 # Flipped once the table has been seen, and never checked again. The status
 # endpoint is polled by every open editor, and a schema that has grown a table
@@ -52,6 +52,22 @@ def require_quizzes_table(db: Session = Depends(get_db)) -> None:
                 "infra/supabase/011_lockdown.sql."
             ),
         )
+    # 015 added columns the Quiz model now maps, so every select(Quiz) fails
+    # on a database that has 014 but not 015. Same refusal, same reason.
+    if not db.scalar(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'quizzes' AND column_name = 'personal_for')"
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Quizzes aren't available yet: the database is missing "
+                "migration 015. Apply infra/migrations/015_quiz_attempts.sql, "
+                "then re-run infra/supabase/011_lockdown.sql."
+            ),
+        )
     _table_present = True
 
 
@@ -72,10 +88,14 @@ MAX_OPEN_QUIZZES = 1
 def _latest(db: Session, document_id: uuid.UUID) -> Quiz | None:
     """The newest quiz for this document, whatever its status — a running one
     is what the editor needs to show, and a failure is something the person
-    who asked has to be told rather than being handed the previous success."""
+    who asked has to be told rather than being handed the previous success.
+
+    Practice quizzes are excluded: they are one person's, and the newest row
+    here is the group's quiz."""
     return db.scalars(
         select(Quiz)
         .where(Quiz.document_id == document_id)
+        .where(Quiz.personal_for.is_(None))
         .order_by(Quiz.created_at.desc())
         .limit(1)
     ).first()
@@ -106,6 +126,7 @@ def create_quiz(
         .select_from(Quiz)
         .where(
             Quiz.document_id == document_id,
+            Quiz.personal_for.is_(None),
             Quiz.status.in_(OPEN_STATUSES),
         )
     )
@@ -119,6 +140,7 @@ def create_quiz(
         document_id=document_id,
         requested_by=user.id,
         notes=body.notes,
+        sections=body.sections,
         status="pending",
     )
     db.add(quiz)
@@ -163,6 +185,7 @@ def get_quiz(
         select(Quiz)
         .options(undefer(Quiz.questions))
         .where(Quiz.document_id == document_id)
+        .where(Quiz.personal_for.is_(None))
         .order_by(Quiz.created_at.desc())
         .limit(1)
     ).first()
@@ -170,5 +193,87 @@ def get_quiz(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No finished quiz for this document.",
+        )
+    return quiz
+
+
+@router.post(
+    "/{document_id}/quiz/practice",
+    response_model=QuizStatusOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def create_practice_quiz(
+    document_id: uuid.UUID,
+    body: CreatePracticeQuiz,
+    user: CurrentUser,
+    db: Session = Depends(get_db),
+):
+    """A quiz on one person's weak sections, for them alone.
+
+    The one-open limit is per person, not per document: practice belongs to
+    whoever asked, so one member's running practice must not hold up
+    another's, nor the group quiz (which create_quiz counts separately).
+    """
+    require_document(document_id, user, db)
+
+    open_count = db.scalar(
+        select(func.count())
+        .select_from(Quiz)
+        .where(
+            Quiz.document_id == document_id,
+            Quiz.personal_for == user.id,
+            Quiz.status.in_(OPEN_STATUSES),
+        )
+    )
+    if open_count >= MAX_OPEN_QUIZZES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Your practice quiz for this document is still being written.",
+        )
+
+    quiz = Quiz(
+        document_id=document_id,
+        requested_by=user.id,
+        personal_for=user.id,
+        notes=body.notes,
+        sections=body.sections,
+        status="pending",
+    )
+    db.add(quiz)
+    db.commit()
+    db.refresh(quiz)
+    return quiz
+
+
+# By id rather than "newest for the document": a practice quiz is never the
+# newest-for-the-document by definition, and an attempt has to name exactly
+# the quiz it was taken against even after a groupmate asks for another.
+by_id_router = APIRouter(
+    prefix="/quizzes",
+    tags=["quizzes"],
+    dependencies=[Depends(require_quizzes_table)],
+)
+
+
+@by_id_router.get("/{quiz_id}", response_model=QuizProgressOut)
+def get_quiz_status_by_id(
+    quiz_id: uuid.UUID, user: CurrentUser, db: Session = Depends(get_db)
+):
+    quiz = require_quiz(quiz_id, user, db)
+    return QuizProgressOut(
+        **QuizStatusOut.model_validate(quiz).model_dump(),
+        **progress_for(db, "quizzes", quiz.id),
+    )
+
+
+@by_id_router.get("/{quiz_id}/content", response_model=QuizOut)
+def get_quiz_by_id(
+    quiz_id: uuid.UUID, user: CurrentUser, db: Session = Depends(get_db)
+):
+    quiz = require_quiz(quiz_id, user, db)
+    if quiz.status != "done":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This quiz isn't finished yet.",
         )
     return quiz
