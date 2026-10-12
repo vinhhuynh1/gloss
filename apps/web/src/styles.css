@@ -1256,16 +1256,78 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
   animation-delay: calc(240ms + var(--line, 0) * 30ms);
 }
 
-.space-page.is-entering .ProseMirror > :nth-child(2) { --line: 1; }
-.space-page.is-entering .ProseMirror > :nth-child(3) { --line: 2; }
-.space-page.is-entering .ProseMirror > :nth-child(4) { --line: 3; }
-.space-page.is-entering .ProseMirror > :nth-child(5) { --line: 4; }
-.space-page.is-entering .ProseMirror > :nth-child(6) { --line: 5; }
-.space-page.is-entering .ProseMirror > :nth-child(7) { --line: 6; }
-.space-page.is-entering .ProseMirror > :nth-child(8) { --line: 7; }
+.space-page .ProseMirror > :nth-child(2) { --line: 1; }
+.space-page .ProseMirror > :nth-child(3) { --line: 2; }
+.space-page .ProseMirror > :nth-child(4) { --line: 3; }
+.space-page .ProseMirror > :nth-child(5) { --line: 4; }
+.space-page .ProseMirror > :nth-child(6) { --line: 5; }
+.space-page .ProseMirror > :nth-child(7) { --line: 6; }
+.space-page .ProseMirror > :nth-child(8) { --line: 7; }
 
 .space-page.is-entering .annotation-margin {
   animation: page-rise 420ms var(--ease) 240ms backwards;
+}
+
+/* Moving between documents (.is-switching, see SpacePage). The page is
+   already here, so this is quicker and quieter than arriving: the new notes
+   travel in from the side of the list they sit on, their first lines a beat
+   apart, and what belongs to them (toolbar, outline, sources, margin) fades
+   up behind. The document list itself never moves; it only marks the new
+   current row. */
+.space-page.from-below {
+  --doc-shift: 14px;
+}
+
+.space-page.from-above {
+  --doc-shift: -14px;
+}
+
+.space-page.is-switching .app-layout:not([aria-busy]) .editor-pane {
+  animation: doc-in 320ms var(--ease) backwards;
+}
+
+.space-page.is-switching .app-layout:not([aria-busy]) .ProseMirror > :nth-child(-n + 8) {
+  animation: doc-in 300ms var(--ease) backwards;
+  animation-delay: calc(70ms + var(--line, 0) * 25ms);
+}
+
+.space-page.is-switching .workspace-toolbar,
+.space-page.is-switching .app-layout:not([aria-busy]) .left-rail > :not(.documents-panel),
+.space-page.is-switching .app-layout:not([aria-busy]) .annotation-margin {
+  animation: doc-fade 280ms var(--ease) 120ms backwards;
+}
+
+/* The placeholder while the next document connects waits a moment before
+   showing, so a fast switch goes straight from one page to the next without
+   a grey flash in between. */
+.space-page.is-switching .app-layout[aria-busy] .editor-skeleton {
+  animation: doc-fade 200ms var(--ease) 180ms backwards;
+}
+
+/* The current-row bar grows into the row that was just picked. Only in the
+   holding list, which is the one on screen at the moment of the click; the
+   workspace's own list mounts after it with the bar already in place. */
+.space-page.is-switching .app-layout[aria-busy] .document-item.is-current::before {
+  animation: marker-in 240ms var(--ease) backwards;
+}
+
+@keyframes doc-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--doc-shift, 14px));
+  }
+}
+
+@keyframes doc-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes marker-in {
+  from {
+    transform: translateY(-50%) scaleY(0);
+  }
 }
 
 /* Last: the chat bar is the one thing that is always there, so it settles
@@ -2487,14 +2549,62 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
   }
 }
 
-.quiz-submit {
+/* Submit is the same control from the first question to the last: it fills
+   with the accent tint as answers go in, carrying the count, and turns to
+   ink once the last one lands. A pill, to sit level with the pager. */
+/* Three columns, label in the middle: the count sits to its right without
+   pushing it off centre, and nothing moves when the count goes away. */
+.quiz-controls .quiz-submit {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  gap: 0.5rem;
   margin-left: auto;
-  min-width: 6.5rem;
+  min-width: 7.5rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: var(--radius-pill);
   font-variant-numeric: tabular-nums;
 }
 
+.quiz-submit:disabled {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+  box-shadow: var(--inset-sunken);
+}
+
+.quiz-submit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--accent-tint);
+  transform: scaleX(var(--progress, 0));
+  transform-origin: left;
+  transition: transform var(--dur-slow) var(--ease);
+}
+
+.quiz-submit:not(:disabled)::before {
+  display: none;
+}
+
+.quiz-submit-label {
+  grid-column: 2;
+}
+
+.quiz-submit-count {
+  grid-column: 3;
+  justify-self: start;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 /* The last answer in: Submit wakes up with one small swell, so the change
-   from "3 to go" to ready is seen rather than discovered. */
+   from filling to ready is seen rather than discovered. */
 .quiz-submit.is-ready {
   animation: submit-ready 460ms var(--ease);
 }

@@ -1,5 +1,5 @@
 import type { Editor as TiptapEditor } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { WebsocketProvider } from "y-websocket";
 import type * as Y from "yjs";
 
@@ -734,6 +734,28 @@ export default function SpacePage({
     return () => window.clearTimeout(timer);
   }, [workspaceReady, entering]);
 
+  // Moving between documents after arrival: the new one comes in from the
+  // side of the list it sits on, so going down the list reads as going down.
+  // Held from the switch until the new workspace has rendered and moved, the
+  // same way as `entering` above.
+  const [switchFrom, setSwitchFrom] = useState<"above" | "below" | null>(null);
+  const previousDocId = useRef<string | undefined>(undefined);
+  // Layout effect: the class has to be on before the first frame of the new
+  // document is painted, or it shows in place for a frame and then jumps.
+  useLayoutEffect(() => {
+    const previous = previousDocId.current;
+    previousDocId.current = docId;
+    if (!previous || !docId || previous === docId || entering) return;
+    const from = documents.findIndex((d) => d.id === previous);
+    const to = documents.findIndex((d) => d.id === docId);
+    setSwitchFrom(to < from ? "above" : "below");
+  }, [docId, documents, entering]);
+  useEffect(() => {
+    if (!switchFrom || !workspaceReady) return;
+    const timer = window.setTimeout(() => setSwitchFrom(null), 700);
+    return () => window.clearTimeout(timer);
+  }, [switchFrom, workspaceReady, docId]);
+
   async function invite(email: string) {
     const member = await apiFetch<Member>(`/study-spaces/${spaceId}/members`, {
       method: "POST",
@@ -762,7 +784,13 @@ export default function SpacePage({
   }
 
   return (
-    <div className={`space-page${entering ? " is-entering" : ""}`}>
+    <div
+      className={[
+        "space-page",
+        entering ? "is-entering" : "",
+        switchFrom ? `is-switching from-${switchFrom}` : "",
+      ].join(" ")}
+    >
       <header className="app-header">
         {/* A trail rather than a back link beside a title. "All spaces" on
             its own says where you would go; a trail says where you are, which
@@ -843,11 +871,26 @@ export default function SpacePage({
         // document and the socket arrive.
         <div className="app-layout" aria-busy="true">
           <div className="left-rail">
-            <div className="documents-panel">
-              <div className="skeleton skeleton-line" style={{ width: "45%" }} />
-              <div className="skeleton skeleton-line" style={{ width: "80%" }} />
-              <div className="skeleton skeleton-line" style={{ width: "65%" }} />
-            </div>
+            {/* Between documents the list is already known, so it stays put
+                rather than blinking to placeholders while the socket for the
+                next one connects. */}
+            {doc ? (
+              <DocumentList
+                documents={documents}
+                currentId={doc.id}
+                busy={docsBusy}
+                onOpen={openDocument}
+                onCreate={() => void createDocument()}
+                onRename={(id, title) => void renameDocument(id, title)}
+                onDelete={(id) => void deleteDocument(id)}
+              />
+            ) : (
+              <div className="documents-panel">
+                <div className="skeleton skeleton-line" style={{ width: "45%" }} />
+                <div className="skeleton skeleton-line" style={{ width: "80%" }} />
+                <div className="skeleton skeleton-line" style={{ width: "65%" }} />
+              </div>
+            )}
           </div>
           <div className="editor-pane">
             <div className="editor-skeleton">
