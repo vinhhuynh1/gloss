@@ -2255,19 +2255,19 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
 /* Where you are and what is left, at a glance. Answered fills; the current
    one stretches into a pill, so the two read apart when they coincide and
    the eye can find its place in a row of twenty-five. */
-/* The button is a 1.5rem (24px) tap target; the visible dot inside it is
+/* The button is a 2rem (32px) tap target; the visible dot inside it is
    drawn by ::before. Negative margin keeps the first dot flush left. */
 .quiz-dots {
   display: flex;
   flex-wrap: wrap;
-  margin: 0 0 1rem -0.4rem;
+  margin: 0 0 1rem -0.55rem;
 }
 
 .quiz-dots button.quiz-dot {
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 2rem;
+  height: 2rem;
   padding: 0;
   border: 0;
   border-radius: var(--radius-pill);
@@ -2277,8 +2277,8 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
 
 .quiz-dots button.quiz-dot::before {
   content: "";
-  width: 0.6rem;
-  height: 0.6rem;
+  width: 0.9rem;
+  height: 0.9rem;
   box-sizing: border-box;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
@@ -2294,7 +2294,7 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
 }
 
 .quiz-dots button.quiz-dot.is-current::before {
-  width: 1.2rem;
+  width: 1.7rem;
   border-color: var(--accent);
 }
 
