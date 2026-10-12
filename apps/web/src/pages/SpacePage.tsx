@@ -246,7 +246,7 @@ function Workspace({
 
   /** The notes as last seen. An open quiz replaces the workspace, which
    * unmounts the editor and sets `editor` to null, and the score screen still
-   * needs the headings (for "Worth another look") and the text (for a
+   * needs the headings (for "Weak sections") and the text (for a
    * practice quiz). ProseMirror documents are immutable, so holding the last
    * one is safe. */
   const lastDoc = useRef<Doc | null>(null);
