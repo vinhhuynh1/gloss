@@ -406,8 +406,9 @@ export default function QuizView({
           className={`quiz-submit${remaining === 0 ? " is-ready" : ""}`}
           onClick={submit}
           disabled={remaining > 0}
+          style={{ "--progress": (total - remaining) / total } as CSSProperties}
         >
-          {remaining > 0 ? `${remaining} to go` : "Submit"}
+          Submit
         </button>
       </div>
     </div>
