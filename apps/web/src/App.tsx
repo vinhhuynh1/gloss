@@ -1,6 +1,7 @@
 import { useAuth } from "./auth/AuthProvider";
 import LoginScreen from "./auth/LoginScreen";
 import SpaceListPage from "./pages/SpaceListPage";
+import DemoStart from "./pages/DemoStart";
 import SpacePage from "./pages/SpacePage";
 import { navigate, spaceIdFromRoute, useHashRoute } from "./lib/useHashRoute";
 
@@ -13,6 +14,10 @@ export default function App() {
   // deliberately a blank hold rather than a skeleton of a screen that may
   // turn out to be the login form instead.
   if (loading) return <div className="boot-hold" aria-busy="true" />;
+
+  // Before the session check: a visitor with no session must reach the demo
+  // without seeing the sign-in form first.
+  if (route === "/demo") return <DemoStart />;
 
   // The hash survives the login screen, so a signed-out user opening a shared
   // link lands on that space straight after signing in — the whole "send a

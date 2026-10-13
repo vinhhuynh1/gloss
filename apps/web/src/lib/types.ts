@@ -9,6 +9,8 @@ export interface StudySpace {
   course_name: string;
   created_by: string;
   created_at: string;
+  /** A demo sandbox (POST /demo). Absent from APIs that predate 016. */
+  is_demo?: boolean;
 }
 
 export interface SpaceDocument {
