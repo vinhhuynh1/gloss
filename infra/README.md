@@ -75,7 +75,9 @@ psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/013_guest_signups.sql
 ```
 
-`016_guest_users.sql` (guest and demo flags) must run before
+`016_guest_users.sql` (guest and demo flags, guest usage) must be applied
+before the code that uses it is deployed — the API reads its columns on every
+request — and before
 `supabase/013_guest_signups.sql`, which teaches the signup trigger to accept
 anonymous (demo) users — see the README's "Demo mode" section.
 

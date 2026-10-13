@@ -128,14 +128,18 @@ Start them in this order — each depends on the one before it.
 copy of a template study space, without an account. Design:
 `docs/superpowers/specs/2026-10-13-demo-mode-design.md`.
 
-Setup, once per Supabase project:
+Setup, once per Supabase project — **in this order**:
 
 1. Authentication → Sign In / Providers → turn on **Allow anonymous sign-ins**.
-2. Apply `infra/migrations/016_guest_users.sql`, then
-   `infra/supabase/013_guest_signups.sql`.
+2. Apply `infra/migrations/016_guest_users.sql`, **then**
+   `infra/supabase/013_guest_signups.sql`. Do both **before** merging or
+   deploying this code: the API's models read `users.is_guest` and
+   `study_spaces.is_demo` on every request, so an API deployed ahead of 016
+   fails every signed-in request, not just guests'. And 013 applied before
+   016 breaks every signup.
 3. On the API service set `DEMO_TEMPLATE_SPACE_ID` to the space to copy, and
    optionally `DEMO_DAILY_LIMIT` (default 50 new demos per day).
-4. Redeploy the API, worker and web app.
+4. Merge and redeploy the API, worker and web app.
 
 Guests get 5 checks, 3 chat questions, 1 study guide and 1 quiz, can't upload
 or invite, and are deleted by the worker after 24 hours. Limits live in
