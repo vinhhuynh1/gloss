@@ -19,7 +19,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, undefer
 
 from auth import CurrentUser
-from authz import require_document
+from authz import require_document, require_quota
 from database import get_db
 from models import StudyGuide
 from generation_progress import progress_for
@@ -119,6 +119,7 @@ def create_study_guide(
     both slower and more expensive for the same output.
     """
     require_document(document_id, user, db)
+    require_quota(user, "study_guide", db)
 
     open_count = db.scalar(
         select(func.count())

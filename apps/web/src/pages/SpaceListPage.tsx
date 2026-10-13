@@ -68,7 +68,14 @@ export default function SpaceListPage({
 
   async function load() {
     try {
-      setSpaces(await apiFetch<StudySpace[]>("/study-spaces"));
+      const list = await apiFetch<StudySpace[]>("/study-spaces");
+      // Only a guest can own a demo space, and a guest has nothing else here.
+      const demoSpace = list.find((s) => s.is_demo);
+      if (demoSpace) {
+        onOpen(demoSpace);
+        return;
+      }
+      setSpaces(list);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load spaces");

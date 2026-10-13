@@ -27,7 +27,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session, selectinload, undefer
 
 from auth import CurrentUser
-from authz import require_space
+from authz import require_quota, require_space
 from database import get_db
 from models import ChatMessage, Document, Source
 from schemas import ChatMessageOut, CreateChatMessage
@@ -192,6 +192,7 @@ def ask(
     not yet. Returned together so the asker sees their question and the
     "thinking" placeholder at once rather than a poll later."""
     require_space(space_id, user, db)
+    require_quota(user, "chat", db)
 
     if body.plan_id is not None:
         return _approve_plan(space_id, body, user, db)

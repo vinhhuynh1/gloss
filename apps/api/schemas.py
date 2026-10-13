@@ -45,6 +45,7 @@ class StudySpaceOut(ORMModel):
     course_name: str
     created_by: uuid.UUID
     created_at: datetime
+    is_demo: bool = False
 
 
 class MemberOut(BaseModel):

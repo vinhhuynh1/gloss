@@ -86,7 +86,14 @@ function SourceMark({ filename }: { filename: string }) {
   return <Mark className="source-icon" />;
 }
 
-export default function SourcesPanel({ spaceId }: { spaceId: string }) {
+export default function SourcesPanel({
+  spaceId,
+  canUpload = true,
+}: {
+  spaceId: string;
+  /** False in a demo sandbox, where the API refuses uploads. */
+  canUpload?: boolean;
+}) {
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -238,6 +245,7 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
           this one only took clicks. Accepting the drop costs four handlers and
           removes the step where someone drags a file onto the panel, watches
           nothing happen, and goes looking for a button. */}
+      {canUpload && (
       <label
         className={`upload-zone${dragCount > 0 ? " is-dragging" : ""}`}
         onDragEnter={(e) => {
@@ -278,10 +286,11 @@ export default function SourcesPanel({ spaceId }: { spaceId: string }) {
         </span>
         <span className="upload-hint">PDF, PowerPoint, Markdown or text</span>
       </label>
+      )}
 
       {error && <p className="error">{error}</p>}
 
-      {stalled && (
+      {canUpload && stalled && (
         <p className="warning">
           Still queued. Is the ingestion worker running?
           <code>cd apps/agent-worker &amp;&amp; python worker.py</code>

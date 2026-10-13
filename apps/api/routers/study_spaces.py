@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from auth import CurrentUser
-from authz import OWNER_ONLY, require_space
+from authz import OWNER_ONLY, require_not_guest, require_space
 from database import get_db
 from models import Document, StudySpace, StudySpaceMember, User
 from schemas import (
@@ -37,6 +37,7 @@ def list_study_spaces(user: CurrentUser, db: Session = Depends(get_db)):
 def create_study_space(
     body: CreateStudySpace, user: CurrentUser, db: Session = Depends(get_db)
 ):
+    require_not_guest(user, "create spaces")
     # The owner comes from the verified token, never from the request body.
     space = StudySpace(course_name=body.course_name, created_by=user.id)
     db.add(space)
@@ -192,6 +193,7 @@ def invite_member(
     db: Session = Depends(get_db),
 ):
     require_space(study_space_id, user, db, roles=OWNER_ONLY)
+    require_not_guest(user, "invite people")
 
     invitee = db.scalars(select(User).where(User.email == body.email)).first()
     if invitee is None:

@@ -23,6 +23,7 @@ import { colorFromId } from "../lib/avatarColor";
 import type { PassageAnchor } from "../lib/anchors";
 import { applySuggestion } from "../lib/applySuggestion";
 import { insertNotes } from "../lib/notesToDoc";
+import { signOut } from "../lib/session";
 import { useCollabProvider } from "../lib/useCollabProvider";
 import { useComments } from "../lib/useComments";
 import { type Doc, headingEntries, sectionHeadings, sectionText } from "../lib/sections";
@@ -128,6 +129,7 @@ function GenerateButton({
  */
 function Workspace({
   spaceId,
+  isDemo,
   documentId,
   ydoc,
   provider,
@@ -143,6 +145,8 @@ function Workspace({
   onEditor,
 }: {
   spaceId: string;
+  /** A demo sandbox: no uploads (the API refuses them). */
+  isDemo: boolean;
   documentId: string;
   ydoc: Y.Doc;
   provider: WebsocketProvider;
@@ -472,7 +476,7 @@ function Workspace({
           {/* Sources stay per space, not per document: the corpus belongs to
               the course, so a citation found for week 6 is just as valid in
               week 7. */}
-          <SourcesPanel spaceId={spaceId} />
+          <SourcesPanel spaceId={spaceId} canUpload={!isDemo} />
         </div>
         {/* Kept mounted and editable in every connection state. Yjs merges
             edits made while offline on reconnect — disabling the editor
@@ -812,16 +816,27 @@ export default function SpacePage({
           {members.length} member{members.length === 1 ? "" : "s"}
         </span>
         {provider && <PresenceBar provider={provider} status={status} />}
-        <button
-          className="link-button with-icon"
-          aria-haspopup="dialog"
-          onClick={() => setInviteOpen(true)}
-        >
-          <IconInvite />
-          Invite
-        </button>
+        {!space?.is_demo && (
+          <button
+            className="link-button with-icon"
+            aria-haspopup="dialog"
+            onClick={() => setInviteOpen(true)}
+          >
+            <IconInvite />
+            Invite
+          </button>
+        )}
         <ThemeToggle />
       </header>
+
+      {space?.is_demo && (
+        <div className="demo-banner" role="note">
+          <span>You're in a demo — changes are deleted after 24 hours.</span>
+          <button type="button" className="link-button" onClick={() => void signOut()}>
+            Sign up to keep a space
+          </button>
+        </div>
+      )}
 
       {inviteOpen && (
         <ShareDialog
@@ -852,6 +867,7 @@ export default function SpacePage({
         <Workspace
           key={doc.id}
           spaceId={spaceId}
+          isDemo={!!space?.is_demo}
           documentId={doc.id}
           ydoc={ydoc}
           provider={provider}

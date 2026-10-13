@@ -13,10 +13,18 @@ and a 404-for-everything API is materially harder to debug.
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from models import Document, Quiz, Source, StudySpace, StudySpaceMember, User
+from models import (
+    Document,
+    GuestUsage,
+    Quiz,
+    Source,
+    StudySpace,
+    StudySpaceMember,
+    User,
+)
 
 OWNER_ONLY = ("owner",)
 ANY_MEMBER = ("owner", "member")
@@ -108,3 +116,64 @@ def require_quiz(quiz_id: uuid.UUID, user: User, db: Session) -> Quiz:
     if db.get(StudySpaceMember, (space_id, user.id)) is None:
         raise not_found
     return quiz
+
+
+# Demo mode: (allowance, plural label for the message). The one place to
+# change a limit. See docs/superpowers/specs/2026-10-13-demo-mode-design.md.
+GUEST_LIMITS: dict[str, tuple[int, str]] = {
+    "check": (5, "checks"),
+    "chat": (3, "chat questions"),
+    "study_guide": (1, "study guides"),
+    "quiz": (1, "quizzes"),
+}
+
+
+def _demo_started_at(user: User, db: Session):
+    return db.scalar(
+        select(func.min(StudySpace.created_at))
+        .join(StudySpaceMember, StudySpaceMember.study_space_id == StudySpace.id)
+        .where(StudySpaceMember.user_id == user.id, StudySpace.is_demo)
+    )
+
+
+def require_quota(user: User, kind: str, db: Session) -> None:
+    """429 once a guest has used their allowance for `kind`; otherwise spends
+    one unit of it.
+
+    The spend is a guest_usage row written in the caller's transaction, under
+    a per-guest advisory lock held until that transaction ends. So two
+    requests sent at once queue rather than both passing a count of zero; a
+    request the endpoint goes on to refuse rolls back and spends nothing; and
+    deleting a document — which cascades its checks, guides and quizzes —
+    cannot hand the allowance back. Rows the demo copy brought over were never
+    spent, so they never count. Normal users return immediately."""
+    if not user.is_guest:
+        return
+    limit, label = GUEST_LIMITS[kind]
+    if _demo_started_at(user, db) is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Start the demo first"
+        )
+
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"quota:{user.id}"})
+    used = db.scalar(
+        select(func.count()).select_from(GuestUsage).where(
+            GuestUsage.user_id == user.id, GuestUsage.kind == kind
+        )
+    )
+    if used >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demo limit reached — {limit} of {limit} {label} used. Sign up to keep going.",
+        )
+    db.add(GuestUsage(user_id=user.id, kind=kind))
+    db.flush()
+
+
+def require_not_guest(user: User, action: str) -> None:
+    """403 for things a demo sandbox does not offer."""
+    if user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The demo can't {action}. Sign up to use your own space.",
+        )

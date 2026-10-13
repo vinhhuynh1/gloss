@@ -5481,3 +5481,27 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
   padding: 0.2rem 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* Demo mode ------------------------------------------------------------ */
+.demo-start {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 16px;
+  text-align: center;
+  padding: 24px;
+}
+.demo-start-status { color: var(--text-muted); }
+.demo-start-actions { display: flex; gap: 12px; justify-content: center; }
+.login-demo { margin-top: 6px; }
+.demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
