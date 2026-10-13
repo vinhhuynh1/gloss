@@ -122,6 +122,26 @@ Start them in this order — each depends on the one before it.
 > so they stay in sync even with the realtime server stopped. Use two browsers,
 > or one normal and one private window — ideally signed in as two users.
 
+## Demo mode
+
+`/#/demo` (or "Try the demo" on the sign-in screen) gives a visitor a private
+copy of a template study space, without an account. Design:
+`docs/superpowers/specs/2026-10-13-demo-mode-design.md`.
+
+Setup, once per Supabase project:
+
+1. Authentication → Sign In / Providers → turn on **Allow anonymous sign-ins**.
+2. Apply `infra/migrations/016_guest_users.sql`, then
+   `infra/supabase/013_guest_signups.sql`.
+3. On the API service set `DEMO_TEMPLATE_SPACE_ID` to the space to copy, and
+   optionally `DEMO_DAILY_LIMIT` (default 50 new demos per day).
+4. Redeploy the API, worker and web app.
+
+Guests get 5 checks, 3 chat questions, 1 study guide and 1 quiz, can't upload
+or invite, and are deleted by the worker after 24 hours. Limits live in
+`GUEST_LIMITS` in `apps/api/authz.py`. Editing the template space changes what
+new visitors get.
+
 ## Deploy
 
 Four pieces across three hosts.
