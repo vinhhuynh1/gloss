@@ -69,9 +69,15 @@ psql "$SUPABASE_DB_URL" -f infra/migrations/012_generation_progress.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/013_user_delete_cascade.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/014_quizzes.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/015_quiz_attempts.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/016_guest_users.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
+psql "$SUPABASE_DB_URL" -f infra/supabase/013_guest_signups.sql
 ```
+
+`016_guest_users.sql` (guest and demo flags) must run before
+`supabase/013_guest_signups.sql`, which teaches the signup trigger to accept
+anonymous (demo) users — see the README's "Demo mode" section.
 
 No `psql` on the machine? Docker has one, and feeding the file over stdin
 rather than mounting it avoids path translation on Windows entirely:
