@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
 
 import chat
+import housekeeping
 import make_notes
 import progress
 import quiz
@@ -1113,6 +1114,24 @@ def _lane(name: str, jobs, poll: float, once: bool, stop: threading.Event) -> No
         raise
 
 
+HOUSEKEEPING_SECONDS = float(os.getenv("HOUSEKEEPING_SECONDS", "3600"))
+
+
+def _housekeeping(stop: threading.Event) -> None:
+    """Hourly: delete expired demo sandboxes. Same failure rule as a lane — if
+    it dies, stop everything so the platform restarts the process."""
+    try:
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            while not stop.is_set():
+                removed = housekeeping.cleanup_expired_demos(conn)
+                if removed:
+                    print(f"[housekeeping] Removed {removed} expired demo sandbox(es)")
+                stop.wait(HOUSEKEEPING_SECONDS)
+    except Exception:
+        stop.set()
+        raise
+
+
 def run(once: bool = False):
     """Each queue family gets its own lane, so a study guide that takes a
     minute no longer holds up a chat answer, a check, or a quiz queued behind
@@ -1157,6 +1176,11 @@ def run(once: bool = False):
             print("         restart this worker. Everything else is "
                   "unaffected.")
 
+        demos_on = housekeeping.guests_available(conn)
+        if not demos_on:
+            print("NOTE: no users.is_guest column — demo cleanup is OFF. Apply")
+            print("      infra/migrations/016_guest_users.sql and restart this worker.")
+
     # Checks first within the interactive lane: someone is waiting on each,
     # and they are shorter than a chat answer.
     interactive = [
@@ -1189,6 +1213,10 @@ def run(once: bool = False):
         )
         for name, jobs, poll in lanes
     ]
+    if demos_on and not once:
+        threads.append(threading.Thread(
+            target=_housekeeping, args=(stop,), name="housekeeping", daemon=True
+        ))
     for thread in threads:
         thread.start()
 
