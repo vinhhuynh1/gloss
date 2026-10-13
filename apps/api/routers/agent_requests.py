@@ -16,7 +16,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, defer
 
 from auth import CurrentUser
-from authz import require_document
+from authz import require_document, require_quota
 from database import get_db
 from models import AgentRequest
 from schemas import AgentRequestOut, CreateAgentRequest
@@ -72,6 +72,7 @@ def create_agent_request(
     any member can accept or reject — asking is not the same as deciding.
     """
     require_document(document_id, user, db)
+    require_quota(user, "check", db)
     _check_anchor(body.anchor)
 
     open_count = db.scalar(

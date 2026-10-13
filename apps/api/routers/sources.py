@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from auth import CurrentUser
-from authz import require_source, require_space
+from authz import require_not_guest, require_source, require_space
 from database import get_db
 from models import Source, SourceChunk
 from schemas import SourceOut
@@ -148,6 +148,7 @@ def upload_source(
     Session is synchronous, so an async handler would block the event loop on
     both the file read and the insert. FastAPI runs this in a threadpool.
     """
+    require_not_guest(user, "upload sources")
     require_space(study_space_id, user, db)
 
     filename = (file.filename or "").strip() or "upload"
@@ -200,6 +201,7 @@ def retry_source(
     that crashes the parser cannot spin forever, and without this reset that
     ceiling would also block a legitimate retry after someone fixed the cause.
     """
+    require_not_guest(user, "upload sources")
     source = require_source(source_id, user, db)
     if source.status not in ("failed", "ready"):
         raise HTTPException(

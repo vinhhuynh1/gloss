@@ -13,10 +13,20 @@ and a 404-for-everything API is materially harder to debug.
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from models import Document, Quiz, Source, StudySpace, StudySpaceMember, User
+from models import (
+    AgentRequest,
+    ChatMessage,
+    Document,
+    Quiz,
+    Source,
+    StudyGuide,
+    StudySpace,
+    StudySpaceMember,
+    User,
+)
 
 OWNER_ONLY = ("owner",)
 ANY_MEMBER = ("owner", "member")
@@ -108,3 +118,69 @@ def require_quiz(quiz_id: uuid.UUID, user: User, db: Session) -> Quiz:
     if db.get(StudySpaceMember, (space_id, user.id)) is None:
         raise not_found
     return quiz
+
+
+# Demo mode: (allowance, plural label for the message). The one place to
+# change a limit. See docs/superpowers/specs/2026-10-13-demo-mode-design.md.
+GUEST_LIMITS: dict[str, tuple[int, str]] = {
+    "check": (5, "checks"),
+    "chat": (3, "chat questions"),
+    "study_guide": (1, "study guides"),
+    "quiz": (1, "quizzes"),
+}
+
+
+def _demo_started_at(user: User, db: Session):
+    return db.scalar(
+        select(func.min(StudySpace.created_at))
+        .join(StudySpaceMember, StudySpaceMember.study_space_id == StudySpace.id)
+        .where(StudySpaceMember.user_id == user.id, StudySpace.is_demo)
+    )
+
+
+def require_quota(user: User, kind: str, db: Session) -> None:
+    """429 once a guest has used their allowance for `kind`.
+
+    Counts every row the guest created after their sandbox was copied,
+    whatever its status — so re-asking after a failure cannot get around the
+    cap — and never the rows the copy brought over, which keep the template's
+    older created_at. Normal users return immediately."""
+    if not user.is_guest:
+        return
+    limit, label = GUEST_LIMITS[kind]
+    since = _demo_started_at(user, db)
+    if since is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Start the demo first"
+        )
+
+    if kind == "check":
+        stmt = select(func.count()).select_from(AgentRequest).where(
+            AgentRequest.requested_by == user.id, AgentRequest.created_at > since)
+    elif kind == "study_guide":
+        stmt = select(func.count()).select_from(StudyGuide).where(
+            StudyGuide.requested_by == user.id, StudyGuide.created_at > since)
+    elif kind == "quiz":
+        stmt = select(func.count()).select_from(Quiz).where(
+            Quiz.requested_by == user.id, Quiz.created_at > since)
+    else:  # chat: questions only, never the assistant's answer rows
+        stmt = select(func.count()).select_from(ChatMessage).where(
+            ChatMessage.author_id == user.id,
+            ChatMessage.role == "user",
+            ChatMessage.created_at > since,
+        )
+
+    if db.scalar(stmt) >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demo limit reached — {limit} of {limit} {label} used. Sign up to keep going.",
+        )
+
+
+def require_not_guest(user: User, action: str) -> None:
+    """403 for things a demo sandbox does not offer."""
+    if user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The demo can't {action}. Sign up to use your own space.",
+        )
