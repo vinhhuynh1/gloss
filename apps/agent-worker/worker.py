@@ -1118,18 +1118,15 @@ HOUSEKEEPING_SECONDS = float(os.getenv("HOUSEKEEPING_SECONDS", "3600"))
 
 
 def _housekeeping(stop: threading.Event) -> None:
-    """Hourly: delete expired demo sandboxes. Same failure rule as a lane — if
-    it dies, stop everything so the platform restarts the process."""
-    try:
-        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
-            while not stop.is_set():
-                removed = housekeeping.cleanup_expired_demos(conn)
-                if removed:
-                    print(f"[housekeeping] Removed {removed} expired demo sandbox(es)")
-                stop.wait(HOUSEKEEPING_SECONDS)
-    except Exception:
-        stop.set()
-        raise
+    """Hourly: delete expired demo sandboxes. Unlike a lane, a failure here is
+    logged and retried next run rather than stopping the worker — expired
+    sandboxes waiting an extra hour cost nothing; a dead worker costs every
+    check, guide and quiz."""
+    while not stop.is_set():
+        removed = housekeeping.run_once(DATABASE_URL)
+        if removed:
+            print(f"[housekeeping] Removed {removed} expired demo sandbox(es)")
+        stop.wait(HOUSEKEEPING_SECONDS)
 
 
 def run(once: bool = False):

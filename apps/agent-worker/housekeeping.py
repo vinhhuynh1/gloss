@@ -11,6 +11,10 @@ chunks and jobs with it. On Supabase the anonymous auth.users row goes too, in
 the same transaction, so the auth table does not fill up with dead guests.
 The local docker database has no auth schema, so that step is skipped there.
 """
+import traceback
+
+import psycopg
+
 EXPIRY_HOURS = 24
 
 
@@ -43,3 +47,17 @@ def cleanup_expired_demos(conn) -> int:
             (EXPIRY_HOURS,),
         )
         return cur.rowcount
+
+
+def run_once(dsn: str, connect=psycopg.connect) -> int | None:
+    """One cleanup on a fresh connection. Never raises: housekeeping is not
+    worth stopping the AI lanes for, and a connection held idle for an hour
+    between runs would be dropped by a pooler anyway. Returns the number
+    removed, or None after logging a failure."""
+    try:
+        with connect(dsn, autocommit=True) as conn:
+            return cleanup_expired_demos(conn)
+    except Exception:
+        print("[housekeeping] Cleanup failed; will retry next run:")
+        traceback.print_exc()
+        return None
