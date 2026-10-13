@@ -18,7 +18,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, undefer
 
 from auth import CurrentUser
-from authz import require_document, require_quiz
+from authz import require_document, require_quiz, require_quota
 from database import get_db
 from generation_progress import progress_for
 from models import Quiz
@@ -120,6 +120,7 @@ def create_quiz(
     be slower and more expensive for the same output.
     """
     require_document(document_id, user, db)
+    require_quota(user, "quiz", db)
 
     open_count = db.scalar(
         select(func.count())
@@ -215,6 +216,7 @@ def create_practice_quiz(
     another's, nor the group quiz (which create_quiz counts separately).
     """
     require_document(document_id, user, db)
+    require_quota(user, "quiz", db)
 
     open_count = db.scalar(
         select(func.count())
