@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, LargeBinary, SmallInteger, String, Text, func
+from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +20,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True)
     name: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    # A Supabase anonymous identity (demo mode). See 016_guest_users.sql.
+    is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class StudySpace(Base):
@@ -29,6 +31,8 @@ class StudySpace(Base):
     course_name: Mapped[str] = mapped_column(String)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    # A sandbox copied by POST /demo. See 016_guest_users.sql.
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # passive_deletes hands the cascade to Postgres, which the schema already
     # declares as ON DELETE CASCADE. Without it SQLAlchemy loads the children

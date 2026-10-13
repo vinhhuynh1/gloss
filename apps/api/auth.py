@@ -97,7 +97,9 @@ def decode_token(token: str) -> dict:
         raise _unauthorized("Invalid or expired token") from exc
 
 
-def upsert_user(db: Session, user_id: uuid.UUID, email: str, name: str) -> User:
+def upsert_user(
+    db: Session, user_id: uuid.UUID, email: str, name: str, *, is_guest: bool = False
+) -> User:
     """
     Fetch the users row at `user_id`, creating it if absent.
 
@@ -110,7 +112,7 @@ def upsert_user(db: Session, user_id: uuid.UUID, email: str, name: str) -> User:
     if user is not None:
         return user
 
-    user = User(id=user_id, email=email, name=name)
+    user = User(id=user_id, email=email, name=name, is_guest=is_guest)
     db.add(user)
     try:
         db.commit()
@@ -138,10 +140,17 @@ def get_current_user(
         raise _unauthorized("Token has no usable subject") from exc
 
     # Not mirrored yet. Create the row with the token's own id so every
-    # existing foreign key lines up.
-    email = claims.get("email") or f"{user_id}@unknown.invalid"
-    name = (claims.get("user_metadata") or {}).get("name") or email.split("@")[0]
-    return upsert_user(db, user_id, email, name)
+    # existing foreign key lines up. Same rules as the signup trigger
+    # (infra/supabase/013_guest_signups.sql): an anonymous identity has no
+    # email, so it gets a placeholder and the name "Guest".
+    is_guest = bool(claims.get("is_anonymous"))
+    email = claims.get("email") or (
+        f"guest-{user_id}@demo.invalid" if is_guest else f"{user_id}@unknown.invalid"
+    )
+    name = (claims.get("user_metadata") or {}).get("name") or (
+        "Guest" if is_guest else email.split("@")[0]
+    )
+    return upsert_user(db, user_id, email, name, is_guest=is_guest)
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
