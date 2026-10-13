@@ -7,6 +7,7 @@ from routers import (
     agent_requests,
     chat,
     comments,
+    demo,
     documents,
     quiz_attempts,
     quizzes,
@@ -48,6 +49,7 @@ app.include_router(quizzes.router)
 app.include_router(quizzes.by_id_router)
 app.include_router(quiz_attempts.router)
 app.include_router(chat.router)
+app.include_router(demo.router)
 
 # Mounted only when DEV_AUTH_SECRET is set, so a deployment that simply does
 # not set the variable cannot expose a passwordless login by accident — there
