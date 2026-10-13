@@ -11,3 +11,16 @@ CREATE INDEX IF NOT EXISTS users_guest_created_idx ON users (created_at) WHERE i
 -- and read by the web app to show the demo banner.
 ALTER TABLE study_spaces ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS study_spaces_demo_created_idx ON study_spaces (created_at) WHERE is_demo;
+
+-- One row per AI request a guest makes, written by authz.require_quota under a
+-- per-guest advisory lock in the request's own transaction. Counted instead of
+-- the job rows themselves because those can be deleted (a deleted document
+-- cascades its checks, guides and quizzes), which would hand the allowance
+-- back. Keyed to the user, so housekeeping's delete takes it with the guest.
+CREATE TABLE IF NOT EXISTS guest_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS guest_usage_user_kind_idx ON guest_usage (user_id, kind);

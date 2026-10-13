@@ -24,6 +24,18 @@ class User(Base):
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class GuestUsage(Base):
+    """One AI request a demo guest made. See 016_guest_users.sql and
+    authz.require_quota."""
+
+    __tablename__ = "guest_usage"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class StudySpace(Base):
     __tablename__ = "study_spaces"
 
