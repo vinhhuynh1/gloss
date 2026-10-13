@@ -68,3 +68,16 @@ def test_cleanup_removes_only_expired_guests(conn):
 def test_cleanup_without_auth_schema_does_not_fail(conn):
     # The local docker database has no auth schema; cleanup must skip it.
     assert isinstance(housekeeping.cleanup_expired_demos(conn), int)
+
+
+def test_run_once_survives_a_failure():
+    def broken_connect(*_args, **_kwargs):
+        raise RuntimeError("permission denied for table users")
+
+    # Must return rather than raise: a cleanup failure must not stop the
+    # worker's AI lanes.
+    assert housekeeping.run_once(DATABASE_URL, connect=broken_connect) is None
+
+
+def test_run_once_cleans_up_with_its_own_connection():
+    assert isinstance(housekeeping.run_once(DATABASE_URL), int)
