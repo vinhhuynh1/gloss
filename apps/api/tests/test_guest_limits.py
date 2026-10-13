@@ -1,5 +1,6 @@
 """Guests get a small allowance and stay inside their sandbox; normal users
-are untouched."""
+are untouched. Spending happens in require_quota itself (see
+test_guest_usage.py for why), so these tests spend through it."""
 import uuid
 
 import pytest
@@ -8,7 +9,7 @@ from sqlalchemy import delete
 
 import demo
 from authz import GUEST_LIMITS, require_not_guest, require_quota
-from models import AgentRequest, ChatMessage, Document, Quiz, StudyGuide, StudySpace, User
+from models import AgentRequest, Document, Quiz, StudyGuide, StudySpace, User
 
 VALID_ANCHOR = {"from": {}, "to": {}}
 
@@ -37,31 +38,23 @@ def sandbox(db, world):
     db.commit()
 
 
-def _add_checks(db, guest, doc, n, status="pending"):
+def _spend(db, guest, kind, n):
     for _ in range(n):
-        db.add(AgentRequest(document_id=doc.id, requested_by=guest.id,
-                            passage="p", anchor=VALID_ANCHOR, status=status))
-    db.commit()
+        require_quota(guest, kind, db)
+        db.commit()
 
 
 def test_fifth_check_allowed_sixth_refused(db, sandbox):
-    guest, _space, doc = sandbox
-    _add_checks(db, guest, doc, 4)
+    guest, _space, _doc = sandbox
+    _spend(db, guest, "check", 4)
     require_quota(guest, "check", db)  # the 5th is fine
-    _add_checks(db, guest, doc, 1)
+    db.commit()
     with pytest.raises(HTTPException) as exc:
         require_quota(guest, "check", db)
     assert exc.value.status_code == 429
     assert exc.value.detail == (
         "Demo limit reached — 5 of 5 checks used. Sign up to keep going."
     )
-
-
-def test_failed_jobs_still_count(db, sandbox):
-    guest, _space, doc = sandbox
-    _add_checks(db, guest, doc, GUEST_LIMITS["check"][0], status="failed")
-    with pytest.raises(HTTPException):
-        require_quota(guest, "check", db)
 
 
 def test_copied_guide_and_quiz_do_not_count(db, sandbox):
@@ -71,32 +64,30 @@ def test_copied_guide_and_quiz_do_not_count(db, sandbox):
 
 
 def test_one_new_quiz_then_refused(db, sandbox):
-    guest, _space, doc = sandbox
-    db.add(Quiz(document_id=doc.id, requested_by=guest.id, notes="n", status="pending"))
-    db.commit()
+    guest, _space, _doc = sandbox
+    _spend(db, guest, "quiz", 1)
     with pytest.raises(HTTPException) as exc:
         require_quota(guest, "quiz", db)
     assert exc.value.status_code == 429
 
 
-def test_chat_counts_questions_only(db, sandbox):
-    guest, space, _doc = sandbox
-    for i in range(3):
-        db.add(ChatMessage(study_space_id=space.id, role="user", author_id=guest.id))
-        db.add(ChatMessage(study_space_id=space.id, role="assistant"))
-        db.commit()
-        if i < 2:
-            require_quota(guest, "chat", db)
+def test_three_chat_questions_then_refused(db, sandbox):
+    guest, _space, _doc = sandbox
+    _spend(db, guest, "chat", 3)
     with pytest.raises(HTTPException):
         require_quota(guest, "chat", db)
 
 
+def test_kinds_are_counted_separately(db, sandbox):
+    guest, _space, _doc = sandbox
+    _spend(db, guest, "check", GUEST_LIMITS["check"][0])
+    require_quota(guest, "chat", db)  # checks used up, chat untouched
+
+
 def test_normal_users_are_never_limited(db, world):
     for _ in range(10):
-        db.add(AgentRequest(document_id=world.doc.id, requested_by=world.alice.id,
-                            passage="p", anchor=VALID_ANCHOR))
-    db.commit()
-    require_quota(world.alice, "check", db)
+        require_quota(world.alice, "check", db)
+    db.rollback()
     require_not_guest(world.alice, "upload sources")
 
 
@@ -115,7 +106,8 @@ def test_endpoints_enforce_the_rules(client, as_user, db, sandbox):
                        json={"email": "a@example.test"}).status_code == 403
     files = {"file": ("x.md", b"# hi", "text/markdown")}
     assert client.post(f"/study-spaces/{space.id}/sources", files=files).status_code == 403
-    _add_checks(db, guest, doc, GUEST_LIMITS["check"][0])
+    _spend(db, guest, "check", GUEST_LIMITS["check"][0])
     res = client.post(f"/documents/{doc.id}/agent-requests",
                       json={"passage": "p", "anchor": VALID_ANCHOR})
     assert res.status_code == 429
+    assert db.query(AgentRequest).filter_by(requested_by=guest.id).count() == 0

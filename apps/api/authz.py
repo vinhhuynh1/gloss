@@ -13,16 +13,14 @@ and a 404-for-everything API is materially harder to debug.
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from models import (
-    AgentRequest,
-    ChatMessage,
     Document,
+    GuestUsage,
     Quiz,
     Source,
-    StudyGuide,
     StudySpace,
     StudySpaceMember,
     User,
@@ -139,42 +137,37 @@ def _demo_started_at(user: User, db: Session):
 
 
 def require_quota(user: User, kind: str, db: Session) -> None:
-    """429 once a guest has used their allowance for `kind`.
+    """429 once a guest has used their allowance for `kind`; otherwise spends
+    one unit of it.
 
-    Counts every row the guest created after their sandbox was copied,
-    whatever its status — so re-asking after a failure cannot get around the
-    cap — and never the rows the copy brought over, which keep the template's
-    older created_at. Normal users return immediately."""
+    The spend is a guest_usage row written in the caller's transaction, under
+    a per-guest advisory lock held until that transaction ends. So two
+    requests sent at once queue rather than both passing a count of zero; a
+    request the endpoint goes on to refuse rolls back and spends nothing; and
+    deleting a document — which cascades its checks, guides and quizzes —
+    cannot hand the allowance back. Rows the demo copy brought over were never
+    spent, so they never count. Normal users return immediately."""
     if not user.is_guest:
         return
     limit, label = GUEST_LIMITS[kind]
-    since = _demo_started_at(user, db)
-    if since is None:
+    if _demo_started_at(user, db) is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Start the demo first"
         )
 
-    if kind == "check":
-        stmt = select(func.count()).select_from(AgentRequest).where(
-            AgentRequest.requested_by == user.id, AgentRequest.created_at > since)
-    elif kind == "study_guide":
-        stmt = select(func.count()).select_from(StudyGuide).where(
-            StudyGuide.requested_by == user.id, StudyGuide.created_at > since)
-    elif kind == "quiz":
-        stmt = select(func.count()).select_from(Quiz).where(
-            Quiz.requested_by == user.id, Quiz.created_at > since)
-    else:  # chat: questions only, never the assistant's answer rows
-        stmt = select(func.count()).select_from(ChatMessage).where(
-            ChatMessage.author_id == user.id,
-            ChatMessage.role == "user",
-            ChatMessage.created_at > since,
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"quota:{user.id}"})
+    used = db.scalar(
+        select(func.count()).select_from(GuestUsage).where(
+            GuestUsage.user_id == user.id, GuestUsage.kind == kind
         )
-
-    if db.scalar(stmt) >= limit:
+    )
+    if used >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Demo limit reached — {limit} of {limit} {label} used. Sign up to keep going.",
         )
+    db.add(GuestUsage(user_id=user.id, kind=kind))
+    db.flush()
 
 
 def require_not_guest(user: User, action: str) -> None:
