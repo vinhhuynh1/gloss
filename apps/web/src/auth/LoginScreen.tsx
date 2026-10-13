@@ -4,6 +4,7 @@ import { IconHide, IconShow } from "../components/Icon";
 import ThemeToggle from "../components/ThemeToggle";
 import { env } from "../lib/env";
 import { signIn } from "../lib/session";
+import { navigate } from "../lib/useHashRoute";
 
 /**
  * Email + password, deliberately not magic links.
@@ -213,6 +214,16 @@ export default function LoginScreen() {
                       Already have an account? <strong>Sign in</strong>
                     </>
                   )}
+                </button>
+              )}
+              {!devAuth && (
+                <button
+                  type="button"
+                  className="link-button login-demo"
+                  disabled={flip !== "idle"}
+                  onClick={() => navigate("/demo")}
+                >
+                  Just looking? <strong>Try the demo</strong> — no sign-up
                 </button>
               )}
             </div>
