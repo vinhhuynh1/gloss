@@ -271,6 +271,10 @@ class StudyGuide(Base):
     guide: Mapped[dict | None] = mapped_column(JSONB, nullable=True, deferred=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # The sources the guide is built from; NULL for all of them. See 017.
+    source_ids: Mapped[list[uuid.UUID] | None] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=True
+    )
 
 
 class Quiz(Base):
@@ -308,6 +312,10 @@ class Quiz(Base):
     # to them. NULL on the group's shared quiz.
     personal_for: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
+    )
+    # The sources the quiz is built from; NULL for all of them. See 017.
+    source_ids: Mapped[list[uuid.UUID] | None] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), nullable=True
     )
 
 
