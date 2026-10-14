@@ -45,21 +45,33 @@ def search(study_space_id: str, query: str, top_k: int = DEFAULT_TOP_K) -> list[
         return _query(conn, study_space_id, embed(query), top_k)
 
 
-def search_many(study_space_id: str, queries: list[str], top_k: int = DEFAULT_TOP_K) -> list[list[dict]]:
+def search_many(
+    study_space_id: str,
+    queries: list[str],
+    top_k: int = DEFAULT_TOP_K,
+    source_ids: list[str] | None = None,
+) -> list[list[dict]]:
     """search() for several queries at once: one embedding batch and one
     connection, rather than a model call and a fresh connection per query.
     A study guide searches once per section of the notes, and against a remote
     database the connection handshakes alone were seconds of the wait.
 
-    The same SQL as search(), so the two cannot drift apart."""
+    The same SQL as search(), so the two cannot drift apart. `source_ids`
+    narrows the search to those sources; None searches the whole space."""
     if not queries:
         return []
     vectors = embed_batch(queries)
     with psycopg.connect(DATABASE_URL) as conn:
-        return [_query(conn, study_space_id, v, top_k) for v in vectors]
+        return [_query(conn, study_space_id, v, top_k, source_ids) for v in vectors]
 
 
-def _query(conn, study_space_id: str, query_embedding: list[float], top_k: int) -> list[dict]:
+def _query(
+    conn,
+    study_space_id: str,
+    query_embedding: list[float],
+    top_k: int,
+    source_ids: list[str] | None = None,
+) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -71,10 +83,12 @@ def _query(conn, study_space_id: str, query_embedding: list[float], top_k: int) 
               FROM source_chunks sc
               JOIN sources s ON s.id = sc.source_id
              WHERE s.study_space_id = %s
+               AND (%s::uuid[] IS NULL OR s.id = ANY(%s::uuid[]))
              ORDER BY sc.embedding <=> %s::vector
              LIMIT %s
             """,
-            (str(query_embedding), study_space_id, str(query_embedding), top_k),
+            (str(query_embedding), study_space_id, source_ids, source_ids,
+             str(query_embedding), top_k),
         )
         rows = cur.fetchall()
 

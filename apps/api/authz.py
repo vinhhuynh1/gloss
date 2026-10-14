@@ -125,6 +125,7 @@ GUEST_LIMITS: dict[str, tuple[int, str]] = {
     "chat": (3, "chat questions"),
     "study_guide": (1, "study guides"),
     "quiz": (1, "quizzes"),
+    "upload": (1, "uploads"),
 }
 
 
@@ -164,10 +165,29 @@ def require_quota(user: User, kind: str, db: Session) -> None:
     if used >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Demo limit reached — {limit} of {limit} {label} used. Sign up to keep going.",
+            detail=f"Demo limit reached: {limit} of {limit} {label} used. Sign up to keep going.",
         )
     db.add(GuestUsage(user_id=user.id, kind=kind))
     db.flush()
+
+
+def guest_allowance(user: User, db: Session) -> dict[str, dict[str, int]]:
+    """Used and allowed, per kind, for GET /me/allowance. Empty for a
+    signed-up user, who has no limits to show. Read without the advisory
+    lock: this is a display, and require_quota stays the one gate."""
+    if not user.is_guest:
+        return {}
+    used = dict(
+        db.execute(
+            select(GuestUsage.kind, func.count())
+            .where(GuestUsage.user_id == user.id)
+            .group_by(GuestUsage.kind)
+        ).all()
+    )
+    return {
+        kind: {"used": used.get(kind, 0), "limit": limit}
+        for kind, (limit, _label) in GUEST_LIMITS.items()
+    }
 
 
 def require_not_guest(user: User, action: str) -> None:

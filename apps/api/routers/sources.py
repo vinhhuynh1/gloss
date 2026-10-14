@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from auth import CurrentUser
-from authz import require_not_guest, require_source, require_space
+from authz import require_quota, require_source, require_space
 from database import get_db
 from models import Source, SourceChunk
 from schemas import SourceOut
@@ -148,7 +148,6 @@ def upload_source(
     Session is synchronous, so an async handler would block the event loop on
     both the file read and the insert. FastAPI runs this in a threadpool.
     """
-    require_not_guest(user, "upload sources")
     require_space(study_space_id, user, db)
 
     filename = (file.filename or "").strip() or "upload"
@@ -167,6 +166,10 @@ def upload_source(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="That file is empty"
         )
+
+    # Spent last, after every check that can still refuse the file, so a
+    # rejected file costs a guest nothing. Signed-up users return at once.
+    require_quota(user, "upload", db)
 
     source = Source(
         study_space_id=study_space_id,
@@ -201,8 +204,17 @@ def retry_source(
     that crashes the parser cannot spin forever, and without this reset that
     ceiling would also block a legitimate retry after someone fixed the cause.
     """
-    require_not_guest(user, "upload sources")
     source = require_source(source_id, user, db)
+    # A guest may re-run only their own failed upload, for free: the allowance
+    # was spent when the file went up. Template copies are stamped with the
+    # guest as uploader too, but they are 'ready', so re-running them is closed.
+    if user.is_guest and not (
+        source.uploaded_by == user.id and source.status == "failed"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The demo can't re-run that file. Sign up to use your own space.",
+        )
     if source.status not in ("failed", "ready"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -188,6 +188,8 @@ class CreateStudyGuide(BaseModel):
     notes: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
     ]
+    # The sources to build from; omitted for all of them. See 017.
+    source_ids: list[uuid.UUID] | None = None
 
 
 class StudyGuideStatusOut(ORMModel):
@@ -270,6 +272,8 @@ class CreateQuiz(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
     ]
     sections: SectionList | None = None
+    # The sources to build from; omitted for all of them. See 017.
+    source_ids: list[uuid.UUID] | None = None
 
     @field_validator("sections")
     @classmethod
@@ -286,6 +290,8 @@ class CreatePracticeQuiz(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTES_CHARS)
     ]
     sections: SectionList
+    # The sources to build from; omitted for all of them. See 017.
+    source_ids: list[uuid.UUID] | None = None
 
     @field_validator("sections")
     @classmethod
@@ -530,3 +536,13 @@ class WeakSpotOut(BaseModel):
     asked: int
     correct: int
     weak: bool
+
+
+class AllowanceUse(BaseModel):
+    used: int
+    limit: int
+
+
+class AllowanceOut(BaseModel):
+    is_guest: bool
+    limits: dict[str, AllowanceUse]

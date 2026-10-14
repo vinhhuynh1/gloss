@@ -29,8 +29,9 @@ from sqlalchemy.orm import Session, selectinload, undefer
 from auth import CurrentUser
 from authz import require_quota, require_space
 from database import get_db
-from models import ChatMessage, Document, Source
+from models import ChatMessage, Document
 from schemas import ChatMessageOut, CreateChatMessage
+from source_selection import validate_source_ids
 
 # Flipped once the table has been seen, and never checked again — the same
 # device as routers/study_guides.py, for the same reason: the poll below runs
@@ -202,26 +203,12 @@ def ask(
 
     source_ids: list[uuid.UUID] = []
     if body.kind == "notes":
-        # De-duplicated in the order given: the notes follow the files in the
-        # order they were dropped, which is usually lecture order.
-        source_ids = list(dict.fromkeys(body.source_ids))
-        if not source_ids:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Choose at least one file to make notes from.",
-            )
-        found = set(
-            db.scalars(
-                select(Source.id).where(
-                    Source.id.in_(source_ids), Source.study_space_id == space_id
-                )
-            ).all()
+        # In the order given: the notes follow the files in the order they
+        # were dropped, which is usually lecture order.
+        source_ids = validate_source_ids(
+            db, space_id, body.source_ids,
+            empty_detail="Choose at least one file to make notes from.",
         )
-        if len(found) != len(source_ids):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="One of those files is not in this space any more.",
-            )
 
     _check_open(db, space_id, user.id)
 

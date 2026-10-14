@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { apiFetch } from "../lib/api";
+import { fetchUploadsLeft } from "../lib/allowance";
+import { ApiError, apiFetch } from "../lib/api";
 import {
   SOURCE_ACCEPT,
   SOURCES_CHANGED_EVENT,
@@ -88,11 +89,11 @@ function SourceMark({ filename }: { filename: string }) {
 
 export default function SourcesPanel({
   spaceId,
-  canUpload = true,
+  isDemo = false,
 }: {
   spaceId: string;
-  /** False in a demo sandbox, where the API refuses uploads. */
-  canUpload?: boolean;
+  /** A demo sandbox: one upload, then a sign-up nudge in place of the zone. */
+  isDemo?: boolean;
 }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +111,26 @@ export default function SourcesPanel({
   // without this the panel would sit on "Queued" until something else
   // remounted it.
   const [pollToken, setPollToken] = useState(0);
+  /** Demo uploads left; null outside a demo or until the first answer. */
+  const [uploadsLeft, setUploadsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isDemo) return;
+    let active = true;
+    fetchUploadsLeft()
+      .then((left) => {
+        if (active) setUploadsLeft(left);
+      })
+      .catch(() => {
+        if (active) setUploadsLeft(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isDemo, pollToken]);
+
+  // The API is the gate. This only decides whether to offer the zone.
+  const canUpload = !isDemo || uploadsLeft === null || uploadsLeft > 0;
 
   useEffect(() => {
     let active = true;
@@ -171,6 +192,7 @@ export default function SourcesPanel({
       setSources((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
     } catch (err) {
       const error = err instanceof Error ? err.message : "Upload failed";
+      if (err instanceof ApiError && err.status === 429) setUploadsLeft(0);
       setUploads((prev) =>
         prev.map((u) => (u.key === key ? { ...u, state: "failed", error } : u))
       );
@@ -227,7 +249,7 @@ export default function SourcesPanel({
     dragDepth.current = 0;
     setDragCount(0);
     const files = Array.from(e.dataTransfer.files ?? []);
-    if (files.length > 0) upload(files);
+    if (files.length > 0) upload(isDemo ? files.slice(0, 1) : files);
   }
 
   const uploading = uploads.some((u) => u.state === "uploading");
@@ -267,10 +289,10 @@ export default function SourcesPanel({
         <input
           type="file"
           accept={ACCEPT}
-          multiple
+          multiple={!isDemo}
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
-            if (files.length > 0) upload(files);
+            if (files.length > 0) upload(isDemo ? files.slice(0, 1) : files);
             e.target.value = "";
           }}
         />
@@ -284,13 +306,18 @@ export default function SourcesPanel({
                 ? "Uploading…"
                 : "Drop files or browse"}
         </span>
-        <span className="upload-hint">PDF, PowerPoint, Markdown or text</span>
+        <span className="upload-hint">
+          {isDemo ? "1 upload in the demo" : "PDF, PowerPoint, Markdown or text"}
+        </span>
       </label>
+      )}
+      {isDemo && !canUpload && (
+        <p className="demo-upload-used">Demo upload used. Sign up for more.</p>
       )}
 
       {error && <p className="error">{error}</p>}
 
-      {canUpload && stalled && (
+      {!isDemo && stalled && (
         <p className="warning">
           Still queued. Is the ingestion worker running?
           <code>cd apps/agent-worker &amp;&amp; python worker.py</code>

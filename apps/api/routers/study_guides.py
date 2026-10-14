@@ -23,6 +23,7 @@ from authz import require_document, require_quota
 from database import get_db
 from models import StudyGuide
 from generation_progress import progress_for
+from source_selection import validate_source_ids
 from schemas import (
     CreateStudyGuide,
     StudyGuideOut,
@@ -63,6 +64,21 @@ def require_study_guides_table(db: Session = Depends(get_db)) -> None:
                 "Study guides aren't available yet: the study_guides table is "
                 "missing. Apply infra/migrations/005_study_guides.sql, then "
                 "re-run infra/supabase/011_lockdown.sql."
+            ),
+        )
+    # 017 added source_ids, which the model now maps, so every select(StudyGuide)
+    # fails on a database without it. Same refusal as a missing table.
+    if not db.scalar(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'study_guides' AND column_name = 'source_ids')"
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Study guides aren't available yet: the database is missing "
+                "migration 017. Apply infra/migrations/017_generation_sources.sql."
             ),
         )
     _table_present = True
@@ -118,7 +134,14 @@ def create_study_guide(
     artifact, and generating it twice because two people wanted one would be
     both slower and more expensive for the same output.
     """
-    require_document(document_id, user, db)
+    doc = require_document(document_id, user, db)
+    # Checked before the quota so a bad list costs a guest nothing.
+    source_ids = (
+        validate_source_ids(db, doc.study_space_id, body.source_ids,
+                            empty_detail="Choose at least one source.")
+        if body.source_ids is not None
+        else None
+    )
     require_quota(user, "study_guide", db)
 
     open_count = db.scalar(
@@ -139,6 +162,7 @@ def create_study_guide(
         document_id=document_id,
         requested_by=user.id,
         notes=body.notes,
+        source_ids=source_ids,
         status="pending",
     )
     db.add(guide)

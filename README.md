@@ -131,7 +131,8 @@ copy of a template study space, without an account. Design:
 Setup, once per Supabase project — **in this order**:
 
 1. Authentication → Sign In / Providers → turn on **Allow anonymous sign-ins**.
-2. Apply `infra/migrations/016_guest_users.sql`, **then**
+2. Apply `infra/migrations/016_guest_users.sql` and
+   `infra/migrations/017_generation_sources.sql`, **then**
    `infra/supabase/013_guest_signups.sql`. Do both **before** merging or
    deploying this code: the API's models read `users.is_guest` and
    `study_spaces.is_demo` on every request, so an API deployed ahead of 016

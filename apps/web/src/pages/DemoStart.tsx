@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import Orb from "../components/Orb";
 import { demoErrorMessage, startDemo } from "../lib/demo";
 import { navigate } from "../lib/useHashRoute";
 
@@ -28,7 +29,14 @@ export default function DemoStart() {
   return (
     <main className="demo-start" aria-busy={error === null}>
       {error === null ? (
-        <p className="demo-start-status">Setting up your demo…</p>
+        <>
+          <span className="demo-start-well">
+            <Orb activity="building" size={64} />
+          </span>
+          <p className="demo-start-status" role="status">
+            Setting up your demo…
+          </p>
+        </>
       ) : (
         <>
           <p className="error" role="alert">

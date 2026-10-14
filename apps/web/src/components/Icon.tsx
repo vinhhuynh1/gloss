@@ -18,6 +18,7 @@
 import {
   ArrowCounterClockwise,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowUUpLeft,
   ArrowUUpRight,
@@ -127,6 +128,7 @@ export const IconMore = wrap(DotsThree);
 
 /* --- navigation and chrome --- */
 export const IconBack = wrap(ArrowLeft);
+export const IconForward = wrap(ArrowRight);
 export const IconInvite = wrap(UserPlus);
 export const IconSignOut = wrap(SignOut);
 export const IconPrev = wrap(CaretLeft);

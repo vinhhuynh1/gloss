@@ -147,7 +147,7 @@ export function useStudyGuide(documentId: string) {
   }, [documentId, pollToken]);
 
   const ask = useCallback(
-    async (notes: string) => {
+    async (notes: string, sourceIds?: string[]) => {
       // Refused here rather than by the API. The notes column is NOT NULL with
       // a min_length of 1, so an empty document comes back 422 — and a 422 is
       // the one status whose body FastAPI writes as a list of field errors,
@@ -171,7 +171,10 @@ export function useStudyGuide(documentId: string) {
         setGuide(null);
         const created = await apiFetch<StudyGuideStatusRow>(
           `/documents/${documentId}/study-guide`,
-          { method: "POST", body: JSON.stringify({ notes }) }
+          {
+            method: "POST",
+            body: JSON.stringify({ notes, source_ids: sourceIds }),
+          }
         );
         setRow(created);
         askedAt.current = Date.now();
