@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 
-import { IconHide, IconShow } from "../components/Icon";
+import { IconAgent, IconForward, IconHide, IconShow } from "../components/Icon";
 import ThemeToggle from "../components/ThemeToggle";
 import { env } from "../lib/env";
 import { signIn } from "../lib/session";
@@ -216,16 +216,6 @@ export default function LoginScreen() {
                   )}
                 </button>
               )}
-              {!devAuth && (
-                <button
-                  type="button"
-                  className="link-button login-demo"
-                  disabled={flip !== "idle"}
-                  onClick={() => navigate("/demo")}
-                >
-                  Just looking? <strong>Try the demo</strong> — no sign-up
-                </button>
-              )}
             </div>
           </form>
         </div>
@@ -233,6 +223,24 @@ export default function LoginScreen() {
         <p className="login-tagline">
           Write notes together. The agent cites only your sources.
         </p>
+
+        {!devAuth && (
+          <button
+            type="button"
+            className="login-demo"
+            disabled={flip !== "idle"}
+            onClick={() => navigate("/demo")}
+          >
+            <span className="login-demo-well">
+              <IconAgent size={18} />
+            </span>
+            <span className="login-demo-text">
+              <strong>Try the demo</strong>
+              <span>No account needed</span>
+            </span>
+            <IconForward className="login-demo-arrow" />
+          </button>
+        )}
       </div>
     </div>
   );
