@@ -82,7 +82,7 @@ request — and before
 `supabase/013_guest_signups.sql`, which teaches the signup trigger to accept
 anonymous (demo) users — see the README's "Demo mode" section.
 
-`infra/migrations/017_generation_sources.sql`. Apply before deploying the API and worker. Until it is applied, the API answers study guide and quiz routes with a 503 naming the migration, and the worker's claim queries fail.
+`infra/migrations/017_generation_sources.sql`. Apply before deploying the API and worker. Until it is applied, the API answers study guide and quiz routes with a 503 naming the migration, and the worker's claim queries fail. Deploy the worker no later than the API, because an older worker ignores source_ids and builds from all sources.
 
 No `psql` on the machine? Docker has one, and feeding the file over stdin
 rather than mounting it avoids path translation on Windows entirely:
