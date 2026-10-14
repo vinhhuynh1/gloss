@@ -530,3 +530,13 @@ class WeakSpotOut(BaseModel):
     asked: int
     correct: int
     weak: bool
+
+
+class AllowanceUse(BaseModel):
+    used: int
+    limit: int
+
+
+class AllowanceOut(BaseModel):
+    is_guest: bool
+    limits: dict[str, AllowanceUse]

@@ -105,7 +105,8 @@ def test_endpoints_enforce_the_rules(client, as_user, db, sandbox):
     assert client.post(f"/study-spaces/{space.id}/members",
                        json={"email": "a@example.test"}).status_code == 403
     files = {"file": ("x.md", b"# hi", "text/markdown")}
-    assert client.post(f"/study-spaces/{space.id}/sources", files=files).status_code == 403
+    assert client.post(f"/study-spaces/{space.id}/sources", files=files).status_code == 202
+    assert client.post(f"/study-spaces/{space.id}/sources", files=files).status_code == 429
     _spend(db, guest, "check", GUEST_LIMITS["check"][0])
     res = client.post(f"/documents/{doc.id}/agent-requests",
                       json={"passage": "p", "anchor": VALID_ANCHOR})
