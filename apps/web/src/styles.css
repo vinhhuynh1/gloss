@@ -4750,6 +4750,9 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
   background: var(--surface);
   box-shadow: var(--elev-2);
 }
+.source-picker:focus {
+  outline: none;
+}
 .source-picker-title {
   margin: 0;
   color: var(--text-soft);
