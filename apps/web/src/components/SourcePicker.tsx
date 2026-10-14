@@ -65,10 +65,15 @@ export default function SourcePicker({
 
   // Focus moves into the popover once it has content.
   useEffect(() => {
-    if (open && sources) {
-      panelRef.current?.querySelector<HTMLElement>("input:not(:disabled), button")?.focus();
+    if (open && (sources || error)) {
+      const panel = panelRef.current;
+      // Nothing enabled to land on (no ready sources, or a failed load): the
+      // panel itself takes focus so Escape and Tab still work from inside it.
+      (
+        panel?.querySelector<HTMLElement>("input:not(:disabled), button:not(:disabled)") ?? panel
+      )?.focus();
     }
-  }, [open, sources]);
+  }, [open, sources, error]);
 
   // Escape returns focus to the trigger; a click outside, a page scroll or a
   // resize just closes it, as RowMenu does.
@@ -144,6 +149,7 @@ export default function SourcePicker({
             ref={panelRef}
             className="source-picker"
             role="dialog"
+            tabIndex={-1}
             aria-label={`Sources for the ${label.toLowerCase()}`}
             style={{ top: at.top, left: at.left, width: WIDTH }}
           >
@@ -154,8 +160,11 @@ export default function SourcePicker({
                 <Orb activity="syncing" /> Loading sources
               </p>
             )}
-            {sources && ready.length === 0 && waiting.length === 0 && (
+            {sources && sources.length === 0 && (
               <p className="source-picker-empty">No sources yet. Upload one first.</p>
+            )}
+            {sources && sources.length > 0 && ready.length === 0 && (
+              <p className="source-picker-empty">No sources are ready yet.</p>
             )}
             {sources && (ready.length > 0 || waiting.length > 0) && (
               <ul className="source-picker-list">
