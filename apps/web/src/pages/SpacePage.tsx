@@ -14,6 +14,7 @@ import Orb from "../components/Orb";
 import PresenceBar from "../components/PresenceBar";
 import QuizView from "../components/QuizView";
 import ShareDialog from "../components/ShareDialog";
+import SourcePicker from "../components/SourcePicker";
 import SourcesPanel from "../components/SourcesPanel";
 import StudyGuideView from "../components/StudyGuideView";
 import ThemeToggle from "../components/ThemeToggle";
@@ -86,20 +87,20 @@ function GenerateButton({
   row,
   running,
   disabled,
-  onClick,
+  spaceId,
+  onGenerate,
 }: {
   label: string;
   runningLabel: string;
   row: { status: string; progress?: number | null; stage?: string | null } | null;
   running: boolean;
   disabled: boolean;
-  onClick: () => void;
+  spaceId: string;
+  onGenerate: (sourceIds?: string[]) => void;
 }) {
   if (!running || !row) {
     return (
-      <button onClick={onClick} disabled={disabled}>
-        {label}
-      </button>
+      <SourcePicker spaceId={spaceId} label={label} disabled={disabled} onGenerate={onGenerate} />
     );
   }
   const queued = row.status === "pending";
@@ -283,7 +284,7 @@ function Workspace({
   const practice = usePracticeQuiz(documentId);
   const [showPractice, setShowPractice] = useState(false);
 
-  const startPractice = useCallback(() => {
+  const startPractice = useCallback((sourceIds?: string[]) => {
     const doc = currentDoc();
     if (!doc) return;
     const headings = weakNow().map((w) => w.section);
@@ -291,7 +292,7 @@ function Workspace({
     const notes = sectionText(doc, headings).slice(0, MAX_NOTES_CHARS);
     setShowQuiz(false);
     setShowPractice(true);
-    void practice.start(notes, headings);
+    void practice.start(notes, headings, sourceIds);
   }, [currentDoc, weakNow, practice]);
 
   /** The notes as the worker wants them.
@@ -305,7 +306,7 @@ function Workspace({
     return editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n\n");
   }, [editor]);
 
-  const requestGuide = useCallback(() => {
+  const requestGuide = useCallback((sourceIds?: string[]) => {
     const notes = readNotes();
     if (notes === null) return;
     // Flipped only for a request that will actually be made. askGuide refuses
@@ -313,14 +314,14 @@ function Workspace({
     // whichever guide was generated last — so the click would look like it had
     // reopened an old guide rather than like it had been turned down.
     if (notes.trim() !== "") setShowGuide(true);
-    void askGuide(notes);
+    void askGuide(notes, sourceIds);
   }, [readNotes, askGuide]);
 
-  const requestQuiz = useCallback(() => {
+  const requestQuiz = useCallback((sourceIds?: string[]) => {
     const notes = readNotes();
     if (notes === null || !editor) return;
     if (notes.trim() !== "") setShowQuiz(true);
-    void askQuiz(notes, sectionHeadings(editor.state.doc));
+    void askQuiz(notes, sectionHeadings(editor.state.doc), sourceIds);
   }, [readNotes, askQuiz, editor]);
 
   if (showGuide && guide) {
@@ -342,7 +343,7 @@ function Workspace({
         onClose={() => setShowPractice(false)}
         onSubmit={(answers) => saveAttempt(practice.quizId!, answers)}
         weakSpots={weakNow()}
-        onPractise={startPractice}
+        onPractise={() => startPractice()}
       />
     );
   }
@@ -356,7 +357,7 @@ function Workspace({
         onClose={() => setShowQuiz(false)}
         onSubmit={(answers) => saveAttempt(quizId!, answers)}
         weakSpots={weakNow()}
-        onPractise={startPractice}
+        onPractise={() => startPractice()}
       />
     );
   }
@@ -370,7 +371,8 @@ function Workspace({
           row={guideRow}
           running={guideRunning}
           disabled={!editor || asking || guideRunning}
-          onClick={requestGuide}
+          spaceId={spaceId}
+          onGenerate={requestGuide}
         />
         {/* Not "Open the last guide". A chip that names the thing and says
             how old it is answers the question someone actually has — is this
@@ -398,7 +400,8 @@ function Workspace({
           row={quizRow}
           running={quizRunning}
           disabled={!editor || askingQuiz || quizRunning}
-          onClick={requestQuiz}
+          spaceId={spaceId}
+          onGenerate={requestQuiz}
         />
         {quiz && !quizRunning && (
           <button
@@ -424,7 +427,8 @@ function Workspace({
             row={practice.row}
             running={practice.running}
             disabled={!editor || practice.asking || practice.running}
-            onClick={startPractice}
+            spaceId={spaceId}
+            onGenerate={startPractice}
           />
         )}
         {practice.quiz && !practice.running && (
