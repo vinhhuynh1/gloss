@@ -117,7 +117,10 @@ def split_sections(notes: str) -> list[str]:
 
 
 def retrieve_for_notes(
-    study_space_id: str, sections: list[str], report: progress.Report = progress.ignore
+    study_space_id: str,
+    sections: list[str],
+    report: progress.Report = progress.ignore,
+    source_ids: list[str] | None = None,
 ) -> list[dict]:
     """Union of the per-section retrievals, deduped by chunk id.
 
@@ -128,7 +131,7 @@ def retrieve_for_notes(
     searched = sections[:MAX_RETRIEVED_SECTIONS]
     progress.retrieval_step(report, 0, 1)
     # One batch rather than a search per section: see retrieval.search_many.
-    results = search_many(study_space_id, searched, TOP_K)
+    results = search_many(study_space_id, searched, TOP_K, source_ids)
     progress.retrieval_step(report, 1, 1)
     for found in results:
         for chunk in found:
@@ -205,7 +208,10 @@ def call_llm(
 
 
 def generate(
-    study_space_id: str, notes: str, report: progress.Report = progress.ignore
+    study_space_id: str,
+    notes: str,
+    report: progress.Report = progress.ignore,
+    source_ids: list[str] | None = None,
 ) -> tuple[dict, list[dict]]:
     """One guide. Returns it with the chunks it was given, so callers that
     want to score the grounding (eval/run_eval.py) can see both."""
@@ -213,7 +219,7 @@ def generate(
     if not sections:
         raise EmptyNotesError("There are no notes in this document yet.")
 
-    chunks = retrieve_for_notes(study_space_id, sections, report)
+    chunks = retrieve_for_notes(study_space_id, sections, report, source_ids)
     if not chunks:
         raise EmptyNotesError(
             "No source material has been ingested for this study space yet, "

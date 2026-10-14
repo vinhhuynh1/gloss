@@ -546,7 +546,7 @@ def claim_next_quiz(conn):
     Same shape as claim_next_study_guide, including the wait on unsettled
     uploads: a quiz written while half the slides are still being chunked
     would silently cover half the course, and nothing about the finished quiz
-    would say so.
+    would say so. When the request names its sources, only those are waited on.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -565,13 +565,14 @@ def claim_next_quiz(conn):
                           SELECT 1 FROM sources s
                            WHERE s.study_space_id = qd.study_space_id
                              AND s.status IN ('pending', 'processing')
+                             AND (q.source_ids IS NULL OR s.id = ANY(q.source_ids))
                       )
                     ORDER BY q.created_at
                       FOR UPDATE OF q SKIP LOCKED
                     LIMIT 1
              )
                AND d.id = qz.document_id
-         RETURNING qz.id, d.study_space_id, qz.notes, qz.attempts, qz.sections
+         RETURNING qz.id, d.study_space_id, qz.notes, qz.attempts, qz.sections, qz.source_ids
             """
         )
         return cur.fetchone()
@@ -596,13 +597,16 @@ def _fail_quiz(conn, quiz_id, attempts: int, message: str, *, retry: bool):
 
 def process_quiz(conn, row) -> bool:
     """Write one quiz for a claimed row. Returns True on success."""
-    quiz_id, study_space_id, notes, attempts, sections = row
+    quiz_id, study_space_id, notes, attempts, sections, source_ids = row
     print(f"Writing quiz {quiz_id}")
     report = _progress_reporter(conn, "quizzes", quiz_id, attempts)
     report(progress.STAGE_STARTING, 2)
 
     try:
-        result, _chunks = quiz.generate(str(study_space_id), notes, report, sections=sections)
+        result, _chunks = quiz.generate(
+            str(study_space_id), notes, report, sections=sections,
+            source_ids=[str(s) for s in source_ids] if source_ids else None,
+        )
     except study_guide.EmptyNotesError as exc:
         # Nothing to write from, and nothing a retry would change.
         _fail_quiz(conn, quiz_id, attempts, str(exc), retry=False)
@@ -951,7 +955,8 @@ def claim_next_study_guide(conn):
     Same shape as claim_next_agent_request, including the wait on unsettled
     uploads: a guide generated while half the slides are still being chunked
     would silently cover half the course, which is worse than waiting because
-    nothing about the finished guide would say so.
+    nothing about the finished guide would say so. When the request names its
+    sources, only those are waited on.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -970,13 +975,14 @@ def claim_next_study_guide(conn):
                           SELECT 1 FROM sources s
                            WHERE s.study_space_id = gd.study_space_id
                              AND s.status IN ('pending', 'processing')
+                             AND (g.source_ids IS NULL OR s.id = ANY(g.source_ids))
                       )
                     ORDER BY g.created_at
                       FOR UPDATE OF g SKIP LOCKED
                     LIMIT 1
              )
                AND d.id = sg.document_id
-         RETURNING sg.id, d.study_space_id, sg.notes, sg.attempts
+         RETURNING sg.id, d.study_space_id, sg.notes, sg.attempts, sg.source_ids
             """
         )
         return cur.fetchone()
@@ -1001,13 +1007,16 @@ def _fail_study_guide(conn, guide_id, attempts: int, message: str, *, retry: boo
 
 def process_study_guide(conn, row) -> bool:
     """Generate one guide for a claimed row. Returns True on success."""
-    guide_id, study_space_id, notes, attempts = row
+    guide_id, study_space_id, notes, attempts, source_ids = row
     print(f"Writing study guide {guide_id}")
     report = _progress_reporter(conn, "study_guides", guide_id, attempts)
     report(progress.STAGE_STARTING, 2)
 
     try:
-        guide, _chunks = study_guide.generate(str(study_space_id), notes, report)
+        guide, _chunks = study_guide.generate(
+            str(study_space_id), notes, report,
+            [str(s) for s in source_ids] if source_ids else None,
+        )
     except study_guide.EmptyNotesError as exc:
         # Nothing to write from, and nothing a retry would change.
         _fail_study_guide(conn, guide_id, attempts, str(exc), retry=False)
