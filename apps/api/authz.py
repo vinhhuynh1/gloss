@@ -165,7 +165,7 @@ def require_quota(user: User, kind: str, db: Session) -> None:
     if used >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Demo limit reached — {limit} of {limit} {label} used. Sign up to keep going.",
+            detail=f"Demo limit reached: {limit} of {limit} {label} used. Sign up to keep going.",
         )
     db.add(GuestUsage(user_id=user.id, kind=kind))
     db.flush()

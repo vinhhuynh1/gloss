@@ -53,7 +53,7 @@ def test_fifth_check_allowed_sixth_refused(db, sandbox):
         require_quota(guest, "check", db)
     assert exc.value.status_code == 429
     assert exc.value.detail == (
-        "Demo limit reached — 5 of 5 checks used. Sign up to keep going."
+        "Demo limit reached: 5 of 5 checks used. Sign up to keep going."
     )
 
 
