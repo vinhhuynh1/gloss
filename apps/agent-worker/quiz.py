@@ -202,6 +202,7 @@ def generate(
     notes: str,
     report: progress.Report = progress.ignore,
     sections: list[str] | None = None,
+    source_ids: list[str] | None = None,
 ) -> tuple[dict, list[dict]]:
     """One quiz. Returns it with the chunks it was given, so a caller that
     wants to score the grounding can see both - same signature as
@@ -213,7 +214,7 @@ def generate(
     if not blocks:
         raise EmptyNotesError("There are no notes in this document yet.")
 
-    chunks = retrieve_for_notes(study_space_id, blocks, report)
+    chunks = retrieve_for_notes(study_space_id, blocks, report, source_ids)
     if not chunks:
         raise EmptyNotesError(
             "No source material has been ingested for this study space yet, "
