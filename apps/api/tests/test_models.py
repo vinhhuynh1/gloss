@@ -1,3 +1,5 @@
+import uuid
+
 from models import QuizAttempt
 
 from .conftest import make_quiz
@@ -12,3 +14,18 @@ def test_attempt_round_trips(db, world):
     assert saved.submitted_at is not None
     assert quiz.sections == ["Glycolysis", "Krebs cycle"]
     assert quiz.personal_for is None
+
+
+def test_guide_and_quiz_store_source_ids(db, world):
+    from models import Quiz, StudyGuide
+
+    ids = [uuid.uuid4(), uuid.uuid4()]
+    guide = StudyGuide(document_id=world.doc.id, requested_by=world.alice.id,
+                       notes="n", source_ids=ids)
+    quiz = Quiz(document_id=world.doc.id, requested_by=world.alice.id, notes="n")
+    db.add_all([guide, quiz])
+    db.commit()
+    db.refresh(guide)
+    db.refresh(quiz)
+    assert guide.source_ids == ids
+    assert quiz.source_ids is None
