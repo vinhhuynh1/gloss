@@ -205,9 +205,12 @@ def retry_source(
     ceiling would also block a legitimate retry after someone fixed the cause.
     """
     source = require_source(source_id, user, db)
-    # A guest may re-run their own upload, for free: the allowance was spent
-    # when the file went up. The template's sources are not theirs to re-run.
-    if user.is_guest and source.uploaded_by != user.id:
+    # A guest may re-run only their own failed upload, for free: the allowance
+    # was spent when the file went up. Template copies are stamped with the
+    # guest as uploader too, but they are 'ready', so re-running them is closed.
+    if user.is_guest and not (
+        source.uploaded_by == user.id and source.status == "failed"
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The demo can't re-run that file. Sign up to use your own space.",
