@@ -70,6 +70,7 @@ psql "$SUPABASE_DB_URL" -f infra/migrations/013_user_delete_cascade.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/014_quizzes.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/015_quiz_attempts.sql
 psql "$SUPABASE_DB_URL" -f infra/migrations/016_guest_users.sql
+psql "$SUPABASE_DB_URL" -f infra/migrations/017_generation_sources.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/010_auth_sync.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/011_lockdown.sql
 psql "$SUPABASE_DB_URL" -f infra/supabase/013_guest_signups.sql
@@ -80,6 +81,8 @@ before the code that uses it is deployed — the API reads its columns on every
 request — and before
 `supabase/013_guest_signups.sql`, which teaches the signup trigger to accept
 anonymous (demo) users — see the README's "Demo mode" section.
+
+`infra/migrations/017_generation_sources.sql`. Apply before deploying the API and worker. Until it is applied, the API answers study guide and quiz routes with a 503 naming the migration, and the worker's claim queries fail.
 
 No `psql` on the machine? Docker has one, and feeding the file over stdin
 rather than mounting it avoids path translation on Windows entirely:
