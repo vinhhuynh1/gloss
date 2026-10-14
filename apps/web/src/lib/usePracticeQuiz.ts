@@ -82,7 +82,7 @@ export function usePracticeQuiz(documentId: string) {
   }, [id, settled]);
 
   const start = useCallback(
-    async (notes: string, sections: string[]) => {
+    async (notes: string, sections: string[], sourceIds?: string[]) => {
       setAsking(true);
       setFetchError(null);
       setQuiz(null);
@@ -90,7 +90,10 @@ export function usePracticeQuiz(documentId: string) {
       try {
         const created = await apiFetch<QuizStatusRow>(
           `/documents/${documentId}/quiz/practice`,
-          { method: "POST", body: JSON.stringify({ notes, sections }) }
+          {
+            method: "POST",
+            body: JSON.stringify({ notes, sections, source_ids: sourceIds }),
+          }
         );
         setRow(created);
       } catch (err) {

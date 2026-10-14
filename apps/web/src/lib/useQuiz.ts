@@ -145,7 +145,7 @@ export function useQuiz(documentId: string) {
   }, [documentId, pollToken]);
 
   const ask = useCallback(
-    async (notes: string, sections?: string[]) => {
+    async (notes: string, sections?: string[], sourceIds?: string[]) => {
       // Refused here rather than by the API, for the same reason as the
       // guide: an empty document comes back 422, and a 422 is the one status
       // whose body FastAPI writes as a list of field errors. "notes: String
@@ -167,7 +167,10 @@ export function useQuiz(documentId: string) {
         setQuizId(null);
         const created = await apiFetch<QuizStatusRow>(
           `/documents/${documentId}/quiz`,
-          { method: "POST", body: JSON.stringify({ notes, sections }) }
+          {
+            method: "POST",
+            body: JSON.stringify({ notes, sections, source_ids: sourceIds }),
+          }
         );
         setRow(created);
         askedAt.current = Date.now();
