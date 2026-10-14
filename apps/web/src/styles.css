@@ -5483,17 +5483,132 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
 }
 
 /* Demo mode ------------------------------------------------------------ */
+/* The wait between the login screen and the space, on the login screen's own
+   ground: the orb sits in a pressed well cut into the same surface the disc
+   is raised from, so the hand-off reads as one place, not a blank page. */
 .demo-start {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-content: center;
-  gap: 16px;
+  justify-items: center;
+  gap: var(--space-5);
   text-align: center;
-  padding: 24px;
+  padding: var(--space-5);
+  background: var(--neu-base);
 }
-.demo-start-status { color: var(--text-muted); }
+.demo-start-well {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: var(--neu-base);
+  box-shadow: inset 6px 6px 14px var(--neu-dark), inset -6px -6px 14px var(--neu-light);
+  animation: login-rise 520ms 80ms var(--ease) both;
+}
+.demo-start-status {
+  margin: 0;
+  color: var(--text-soft);
+  animation: login-rise 520ms 160ms var(--ease) both;
+}
 .demo-start-actions { display: flex; gap: 12px; justify-content: center; }
-.login-demo { margin-top: 6px; }
+
+/* The second way in, outside the disc so it never competes with signing in.
+   A raised pill of the disc's own material: the well on the left holds the
+   agent's feather, since watching the agent is what the demo is for. Hover
+   floods the well plum (the agent's colour) and sends the arrow on ahead;
+   pressing sinks the whole pill into the page. */
+.login-demo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: auto;
+  padding: 6px var(--space-5) 6px 6px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--neu-base);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: -6px -6px 14px var(--neu-light), 6px 6px 14px var(--neu-dark);
+  transition: box-shadow var(--dur-slow) var(--ease), transform var(--dur-slow) var(--ease);
+  animation: login-rise 520ms 240ms var(--ease) both;
+}
+.login-demo-well {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--accent-text);
+  background: var(--neu-base);
+  box-shadow: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+  transition: background var(--dur-slow) var(--ease), color var(--dur-slow) var(--ease),
+    box-shadow var(--dur-slow) var(--ease);
+}
+.login-demo-well svg {
+  transition: transform var(--dur-slow) var(--ease);
+}
+.login-demo-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.login-demo-text strong {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.login-demo-text span {
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+.login-demo-arrow {
+  margin-left: var(--space-2);
+  color: var(--text-soft);
+  transition: transform var(--dur-slow) var(--ease), color var(--dur-slow) var(--ease);
+}
+
+@media (hover: hover) {
+  .login-demo:hover:not(:disabled) {
+    background: var(--neu-base);
+    color: var(--text);
+  }
+  .login-demo:hover:not(:disabled) .login-demo-well {
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: none;
+  }
+  .login-demo:hover:not(:disabled) .login-demo-well svg {
+    transform: rotate(-12deg) translateY(-1px);
+  }
+  .login-demo:hover:not(:disabled) .login-demo-arrow {
+    color: var(--text);
+    transform: translateX(4px);
+  }
+}
+
+.login-demo:active:not(:disabled) {
+  background: var(--neu-base);
+  color: var(--text);
+  transform: none;
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+}
+
+.login-demo:focus-visible {
+  outline: none;
+  box-shadow: -6px -6px 14px var(--neu-light), 6px 6px 14px var(--neu-dark),
+    0 0 0 2px var(--neu-base), 0 0 0 4px var(--accent);
+}
+
+.login-demo:disabled {
+  background: var(--neu-base);
+  color: var(--text-muted);
+  cursor: default;
+  box-shadow: none;
+}
 .demo-banner {
   display: flex;
   flex-wrap: wrap;
