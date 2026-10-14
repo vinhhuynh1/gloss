@@ -73,17 +73,39 @@ def test_retry_own_failed_upload_is_free(client, as_user, db, sandbox):
     assert _uploads_spent(db, guest) == 1
 
 
-def test_guest_cannot_retry_someone_elses_source(client, as_user, db, world, sandbox):
-    guest, space, _doc = sandbox
-    # Uploaded by alice, not the guest: stands in for a file the template
-    # copy brought into the sandbox.
-    other = Source(study_space_id=space.id, filename="t.md",
-                   uploaded_by=world.alice.id, status="failed",
-                   file_data=b"x", content_type="text/markdown", byte_size=1)
-    db.add(other)
+def test_guest_cannot_retry_a_copied_template_source(client, as_user, db, world):
+    # The copy is stamped uploaded_by = guest and is 'ready': the shape that
+    # used to slip past the guard.
+    db.add(Source(study_space_id=world.space.id, filename="t.md",
+                  uploaded_by=world.alice.id, status="ready",
+                  file_data=b"x", content_type="text/markdown", byte_size=1))
     db.commit()
+    guest = User(id=uuid.uuid4(), email=f"guest-{uuid.uuid4()}@demo.invalid",
+                 name="Guest", is_guest=True)
+    db.add(guest)
+    db.commit()
+    space = demo.copy_template(db, world.space.id, guest)
+    db.commit()
+    try:
+        copied = db.query(Source).filter_by(study_space_id=space.id).one()
+        assert copied.uploaded_by == guest.id and copied.status == "ready"
+        as_user(guest)
+        assert client.post(f"/sources/{copied.id}/retry").status_code == 403
+    finally:
+        db.rollback()
+        db.execute(delete(StudySpace).where(StudySpace.id == space.id))
+        db.execute(delete(User).where(User.id == guest.id))
+        db.commit()
+
+
+def test_guest_cannot_retry_their_own_ready_upload(client, as_user, db, sandbox):
+    guest, space, _doc = sandbox
     as_user(guest)
-    assert client.post(f"/sources/{other.id}/retry").status_code == 403
+    created = client.post(f"/study-spaces/{space.id}/sources", files=_file()).json()
+    source = db.get(Source, uuid.UUID(created["id"]))
+    source.status = "ready"
+    db.commit()
+    assert client.post(f"/sources/{created['id']}/retry").status_code == 403
 
 
 def test_signed_up_users_upload_freely(client, as_user, world):

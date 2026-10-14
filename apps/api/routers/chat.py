@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session, selectinload, undefer
 from auth import CurrentUser
 from authz import require_quota, require_space
 from database import get_db
-from models import ChatMessage, Document, Source
+from models import ChatMessage, Document
 from schemas import ChatMessageOut, CreateChatMessage
 from source_selection import validate_source_ids
 
