@@ -5514,6 +5514,18 @@ button:focus-visible:where(:not([class]), .with-icon:not(.link-button), .chat-se
 }
 .demo-start-actions { display: flex; gap: 12px; justify-content: center; }
 
+/* Where the upload zone was, once the demo's one upload is spent: same
+   footprint, no dashed edge, so it reads as a closed door, not a broken one. */
+.demo-upload-used {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-2);
+  background: var(--surface-sunken);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
 /* The second way in, outside the disc so it never competes with signing in.
    A raised pill of the disc's own material: the well on the left holds the
    agent's feather, since watching the agent is what the demo is for. Hover

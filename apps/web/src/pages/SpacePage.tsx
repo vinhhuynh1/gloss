@@ -476,7 +476,7 @@ function Workspace({
           {/* Sources stay per space, not per document: the corpus belongs to
               the course, so a citation found for week 6 is just as valid in
               week 7. */}
-          <SourcesPanel spaceId={spaceId} canUpload={!isDemo} />
+          <SourcesPanel spaceId={spaceId} isDemo={isDemo} />
         </div>
         {/* Kept mounted and editable in every connection state. Yjs merges
             edits made while offline on reconnect — disabling the editor
