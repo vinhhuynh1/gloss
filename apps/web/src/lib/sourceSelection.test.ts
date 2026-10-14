@@ -12,6 +12,15 @@ function source(id: string, status: Source["status"] = "ready"): Source {
 }
 
 describe("selectionToRequest", () => {
+  it("sends the ready ids when a source is still processing", () => {
+    const all = [source("a"), source("b"), source("c", "processing")];
+    expect(selectionToRequest(all, new Set(["a", "b"]))).toEqual(["a", "b"]);
+  });
+
+  it("sends nothing when there are no sources", () => {
+    expect(selectionToRequest([], new Set())).toBeUndefined();
+  });
+
   const ready = [source("a"), source("b")];
 
   it("sends nothing when every ready source is checked", () => {

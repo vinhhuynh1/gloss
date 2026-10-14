@@ -113,7 +113,7 @@ export default function SourcePicker({
   const waiting = sources
     ? sources.filter((s) => s.status === "pending" || s.status === "processing")
     : [];
-  const request = selectionToRequest(ready, checked);
+  const request = selectionToRequest(sources ?? [], checked);
   const canGenerate = ready.length > 0 && (request === undefined || request.length > 0);
 
   function toggle(id: string) {
