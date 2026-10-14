@@ -22,6 +22,7 @@ from authz import require_document, require_quiz, require_quota
 from database import get_db
 from generation_progress import progress_for
 from models import Quiz
+from source_selection import validate_source_ids
 from schemas import CreatePracticeQuiz, CreateQuiz, QuizOut, QuizProgressOut, QuizStatusOut
 
 # Flipped once the table has been seen, and never checked again. The status
@@ -66,6 +67,21 @@ def require_quizzes_table(db: Session = Depends(get_db)) -> None:
                 "Quizzes aren't available yet: the database is missing "
                 "migration 015. Apply infra/migrations/015_quiz_attempts.sql, "
                 "then re-run infra/supabase/011_lockdown.sql."
+            ),
+        )
+    # 017 added source_ids, which the model now maps, so every select(Quiz)
+    # fails on a database without it. Same refusal as a missing table.
+    if not db.scalar(
+        text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'quizzes' AND column_name = 'source_ids')"
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Quizzes aren't available yet: the database is missing "
+                "migration 017. Apply infra/migrations/017_generation_sources.sql."
             ),
         )
     _table_present = True
@@ -119,7 +135,14 @@ def create_quiz(
     artifact, and generating them twice because two people wanted them would
     be slower and more expensive for the same output.
     """
-    require_document(document_id, user, db)
+    doc = require_document(document_id, user, db)
+    # Checked before the quota so a bad list costs a guest nothing.
+    source_ids = (
+        validate_source_ids(db, doc.study_space_id, body.source_ids,
+                            empty_detail="Choose at least one source.")
+        if body.source_ids is not None
+        else None
+    )
     require_quota(user, "quiz", db)
 
     open_count = db.scalar(
@@ -142,6 +165,7 @@ def create_quiz(
         requested_by=user.id,
         notes=body.notes,
         sections=body.sections,
+        source_ids=source_ids,
         status="pending",
     )
     db.add(quiz)
@@ -215,7 +239,14 @@ def create_practice_quiz(
     whoever asked, so one member's running practice must not hold up
     another's, nor the group quiz (which create_quiz counts separately).
     """
-    require_document(document_id, user, db)
+    doc = require_document(document_id, user, db)
+    # Checked before the quota so a bad list costs a guest nothing.
+    source_ids = (
+        validate_source_ids(db, doc.study_space_id, body.source_ids,
+                            empty_detail="Choose at least one source.")
+        if body.source_ids is not None
+        else None
+    )
     require_quota(user, "quiz", db)
 
     open_count = db.scalar(
@@ -239,6 +270,7 @@ def create_practice_quiz(
         personal_for=user.id,
         notes=body.notes,
         sections=body.sections,
+        source_ids=source_ids,
         status="pending",
     )
     db.add(quiz)
