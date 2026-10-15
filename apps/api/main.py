@@ -18,7 +18,7 @@ from routers import (
     suggestions,
 )
 
-app = FastAPI(title="Study Notes Co-Editor API")
+app = FastAPI(title="Gloss API")
 
 # Comma-separated, set per environment. Defaults to the Vite dev server so a
 # fresh clone still works locally with no .env at all.

@@ -10,3 +10,15 @@ __pycache__/
 node_modules/
 dist/
 .DS_Store
+
+# Local agent and editor tooling — per-machine, not part of the project.
+.agents/
+.claude/
+.superpowers/
+.cmem-projects/
+agent-transcripts/
+skills-lock.json
+.github/copilot-instructions.md
+# The root has no package of its own; these belong to local tooling.
+/package.json
+/package-lock.json
