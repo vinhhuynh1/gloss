@@ -5,6 +5,7 @@ import type * as Y from "yjs";
 
 import AnnotationMargin from "../components/AnnotationMargin";
 import ChatDock from "../components/ChatDock";
+import ErrorBoundary from "../components/ErrorBoundary";
 import CommentComposer from "../components/CommentComposer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DocumentList from "../components/DocumentList";
@@ -927,14 +928,18 @@ export default function SpacePage({
           and Workspace remounts on every document switch. Waits for the
           space so a non-member never gets a chat bar that can only 403. */}
       {space && (
-        <ChatDock
-          spaceId={spaceId}
-          currentUserId={user?.id}
-          canInsert={openEditor !== null}
-          openDocumentId={openEditorFor?.documentId ?? null}
-          readNotes={readOpenNotes}
-          onInsertNotes={insertIntoOpenDocument}
-        />
+        // Its own boundary: a chat failure should cost the chat, not the
+        // document someone is in the middle of editing.
+        <ErrorBoundary scope="panel" label="The chat">
+          <ChatDock
+            spaceId={spaceId}
+            currentUserId={user?.id}
+            canInsert={openEditor !== null}
+            openDocumentId={openEditorFor?.documentId ?? null}
+            readNotes={readOpenNotes}
+            onInsertNotes={insertIntoOpenDocument}
+          />
+        </ErrorBoundary>
       )}
     </div>
   );

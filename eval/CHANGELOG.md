@@ -2,11 +2,10 @@
 
 What each change did to the agent's score, newest first.
 
-The build plan asks for this log specifically: *"Re-run this set every time you
-change the prompt, the chunking strategy, or the retrieval top_k, and keep a
-short log of what each change did to the score. That log is the artifact worth
-showing in an interview — not just a working demo, but 'here's what I tried,
-here's what moved the number.'"*
+Re-run the set every time the prompt, the chunking strategy, or the retrieval
+`top_k` changes, and add one entry per change. One change at a time is the only
+way an entry means anything: it is the difference between "the score went up"
+and "this change moved this number."
 
 ## How to add an entry
 

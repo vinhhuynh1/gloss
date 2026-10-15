@@ -29,7 +29,7 @@ type Listener = (session: Session | null) => void;
 
 /* --- dev backend --- */
 
-const DEV_STORAGE_KEY = "study-notes.dev-session";
+const DEV_STORAGE_KEY = "gloss.dev-session";
 const devListeners = new Set<Listener>();
 
 function readDevSession(): Session | null {

@@ -15,7 +15,7 @@ WEAK_BELOW = 0.7
 
 
 def score_answers(questions: list[dict], answers: list[int]) -> int:
-    return sum(1 for q, a in zip(questions, answers) if q["correct_index"] == a)
+    return sum(1 for q, a in zip(questions, answers, strict=False) if q["correct_index"] == a)
 
 
 def tally(rows: Iterable[tuple[list[int], list[str], list[int]]]) -> list[dict]:
@@ -29,7 +29,7 @@ def tally(rows: Iterable[tuple[list[int], list[str], list[int]]]) -> list[dict]:
     for answers, sections, correct in rows:
         if not len(answers) == len(sections) == len(correct):
             continue
-        for answer, section, right in zip(answers, sections, correct):
+        for answer, section, right in zip(answers, sections, correct, strict=True):
             asked_correct = counts.setdefault(section, [0, 0])
             asked_correct[0] += 1
             asked_correct[1] += int(answer == right)

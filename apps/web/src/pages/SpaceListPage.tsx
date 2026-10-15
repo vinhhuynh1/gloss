@@ -86,6 +86,9 @@ export default function SpaceListPage({
 
   useEffect(() => {
     void load();
+    // Once, on mount: load is rebuilt every render, so listing it would
+    // refetch in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function create(e: React.FormEvent) {
