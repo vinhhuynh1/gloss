@@ -11,8 +11,7 @@ rejects, never as an edit to the shared document.
 <!-- Demo GIF: two browsers editing one doc, then Check with AI producing a cited suggestion.
 ![Gloss: two collaborators and a cited AI suggestion](docs/media/demo.gif) -->
 
-<!-- Live demo link, no account needed:
-**[Try the demo →](https://<your-vercel-host>/#/demo)** -->
+**[Try the demo →](https://gloss-coral.vercel.app/#/demo)** (no account needed)
 
 ## What it does
 
