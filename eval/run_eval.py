@@ -2,7 +2,7 @@
 Runs the agent against a hand-written test set and reports how it did.
 
 Re-run this after every change to the prompt, the chunking strategy, or the
-retrieval top_k — those are the three knobs the build plan names — and add a
+retrieval top_k — the three knobs that move the score — and add a
 line to eval/CHANGELOG.md saying what the change did to the score. Every run
 also drops a JSON record in eval/results/ carrying the config it ran under,
 so a number in that log can always be traced back to the code that produced
@@ -21,10 +21,10 @@ ingest.py to build one from a real PDF.
 
 What gets scored
 ----------------
-The build plan asks for three things: did it flag what it should have, did it
-stay quiet where it should have, and do its citations actually point at a
-passage that supports the claim. The third is the one it calls the failure
-mode that matters most, and it is the reason a case carries `expected_source`.
+Three questions: did it flag what it should have, did it stay quiet where it
+should have, and do its citations actually point at a passage that supports
+the claim. The third is the failure mode that matters most in a tool people
+trust to help them study, and it is the reason a case carries `expected_source`.
 
 Those become five numbers:
 
@@ -55,7 +55,7 @@ import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 import psycopg
@@ -481,7 +481,7 @@ Seed it first:
 
     return {
         "run": {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "mode": "study_guide",
             "git_sha": _git_sha(),
             "elapsed_seconds": round(elapsed, 1),
@@ -590,7 +590,7 @@ def print_comparison(current: dict, previous: dict) -> None:
 
     if moved:
         print("\nCases that moved:")
-        for case_id, was_correct, now_correct in moved:
+        for case_id, _was_correct, now_correct in moved:
             direction = "FAIL -> PASS" if now_correct else "PASS -> FAIL"
             print(f"  {direction}  {case_id}")
     else:
@@ -732,7 +732,7 @@ nothing. Seed it first:
 
     return {
         "run": {
-            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
             "git_sha": _git_sha(),
             "model": agent.ANTHROPIC_MODEL,
             "prompt_sha256": _sha256(AGENT_SYSTEM_PROMPT),

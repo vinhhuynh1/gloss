@@ -139,7 +139,7 @@ export default function RowMenu({
             role="menu"
             style={{ top: at.top, left: at.left }}
           >
-            {items.map((item, i) => {
+            {items.map((item) => {
               const index = usable.indexOf(item);
               return (
                 <button

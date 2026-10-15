@@ -56,7 +56,9 @@ export function useCollabProvider(
   accessToken: string | undefined
 ): Collab {
   // Keyed on the document: switching spaces must not carry one document's
-  // CRDT state into another's.
+  // CRDT state into another's. documentId is unused in the body on purpose:
+  // it is only the key that forces a fresh Y.Doc.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const ydoc = useMemo(() => new Y.Doc(), [documentId]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
