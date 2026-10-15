@@ -738,6 +738,14 @@ h3,
   font-size: var(--text-base);
 }
 
+/* An ErrorBoundary standing in for one panel (components/ErrorBoundary.tsx). */
+.boundary-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
 /* --- sign in ---
    A soft-UI disc: the form is raised out of the page rather than drawn on
    it, lit from the top left, and the fields are pressed into it. It only
