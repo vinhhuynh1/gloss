@@ -45,10 +45,12 @@ def get_document(
     return DocumentWithSnapshotOut(
         id=doc.id,
         study_space_id=doc.study_space_id,
+        title=doc.title,
         crdt_snapshot=base64.b64encode(doc.crdt_snapshot).decode()
         if doc.crdt_snapshot
         else None,
         updated_at=doc.updated_at,
+        created_at=doc.created_at,
     )
 
 
