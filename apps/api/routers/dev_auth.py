@@ -20,7 +20,7 @@ DEV_AUTH_SECRET is set, and auth.py only accepts these signatures under the
 same condition. A deployment that does not set it cannot reach either half.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import jwt
 from fastapi import APIRouter, Depends
@@ -57,7 +57,7 @@ def dev_login(body: DevLogin, db: Session = Depends(get_db)):
 
     user = upsert_user(db, user_id, email, name)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     token = jwt.encode(
         {
             "sub": str(user.id),

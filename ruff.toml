@@ -1,0 +1,10 @@
+# Lint config for every Python app in the repo (apps/api, apps/agent-worker, eval).
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["E", "F", "W", "B", "UP"]
+ignore = [
+  "B008",  # FastAPI's `Depends(...)` in argument defaults is the framework's idiom.
+  "E501",  # Line length is left to review; prompts and SQL read better unwrapped.
+]

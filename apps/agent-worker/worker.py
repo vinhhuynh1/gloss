@@ -201,7 +201,7 @@ def process(conn, row) -> bool:
             "VALUES (%s, %s, %s, %s, %s)",
             [
                 (str(uuid.uuid4()), source_id, chunk, vector, page_ref)
-                for (page_ref, chunk), vector in zip(pending, vectors)
+                for (page_ref, chunk), vector in zip(pending, vectors, strict=True)
             ],
         )
         cur.execute(
