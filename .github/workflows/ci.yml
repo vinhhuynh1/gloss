@@ -22,6 +22,14 @@ jobs:
     defaults:
       run:
         working-directory: apps/web
+    # src/lib/env.ts refuses to load without these, and the tests import it.
+    # Placeholders only: nothing built here is deployed or contacts them.
+    env:
+      VITE_DEV_AUTH: "0"
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder
+      VITE_API_BASE_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:1234
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
