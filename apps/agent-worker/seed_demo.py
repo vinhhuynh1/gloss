@@ -48,6 +48,8 @@ def seed(source_path: Path) -> tuple[str, str]:
     pages = split_markdown_sections(markdown)
     if not pages:
         raise SystemExit(f"No `## ` sections found in {source_path}")
+    # One seed space per source file, so seeding a second course cannot wipe the first.
+    course = SEED_COURSE if source_path.resolve() == DEFAULT_SOURCE.resolve() else f"{source_path.stem} (seed)"
 
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
@@ -63,7 +65,7 @@ def seed(source_path: Path) -> tuple[str, str]:
 
             cur.execute(
                 "SELECT id FROM study_spaces WHERE course_name = %s AND created_by = %s",
-                (SEED_COURSE, user_id),
+                (course, user_id),
             )
             row = cur.fetchone()
             if row:
@@ -78,7 +80,7 @@ def seed(source_path: Path) -> tuple[str, str]:
                 cur.execute(
                     "INSERT INTO study_spaces (id, course_name, created_by) "
                     "VALUES (%s, %s, %s)",
-                    (study_space_id, SEED_COURSE, user_id),
+                    (study_space_id, course, user_id),
                 )
 
             cur.execute(
