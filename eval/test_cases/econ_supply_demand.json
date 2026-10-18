@@ -1,0 +1,151 @@
+{
+  "course_name": "ECON 101 — Supply and Demand (Wikipedia-sourced)",
+  "source_file": "econ_supply_demand_source.md",
+  "schema_notes": "Each case: `id` is stable and is what a run record and a --compare diff key on, so renaming one breaks history. `notes_passage` is the text handed to the agent as if selected in the editor. `expected_type` is the graded verdict, one of none|citation|contradiction|gap_fill. `expected_source` is the `## ` heading of the section that must back a non-none verdict — it is matched against the cited chunk's page_ref, and it is what makes grounding scorable; null when `expected_type` is none. `also_acceptable` lists defensible alternate verdicts: strict accuracy ignores it, lenient accuracy counts them as correct, and the gap between the two numbers is how much of the error is real confusion versus a genuinely fuzzy boundary. `note` is for humans and is not scored.",
+  "cases": [
+    {
+      "id": "none-correct-restatement",
+      "notes_passage": "At equilibrium, the quantity demanded equals the quantity supplied.",
+      "expected_type": "none",
+      "expected_source": null,
+      "also_acceptable": [
+        "citation"
+      ],
+      "note": "Accurate restatement of the equilibrium definition. Also-acceptable as `citation` for the same prompt-definition reason as the BIOL set's case of this id."
+    },
+    {
+      "id": "none-topic-absent",
+      "notes_passage": "Fiscal multipliers are larger during recessions, when monetary policy is stuck at the zero lower bound.",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "Hard negative. Nothing in the corpus covers fiscal policy; the nearest chunk is the money-market paragraph about interest rates, which retrieval will return and the agent must recognise as irrelevant."
+    },
+    {
+      "id": "none-already-cited",
+      "notes_passage": "Consumer surplus is the difference between the maximum price a consumer is willing to pay and the price they actually pay (ECON 101 source, \"Consumer surplus\").",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "Correct and already carries a citation, so there is nothing to add."
+    },
+    {
+      "id": "none-vague-but-not-wrong",
+      "notes_passage": "Prices are shaped by both buyers and sellers, and government rules can change the outcome.",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "True and too unspecific to pin to any one section."
+    },
+    {
+      "id": "none-correct-market-demand",
+      "notes_passage": "The market demand curve is found by adding up the quantities on each buyer's demand curve at every price.",
+      "expected_type": "none",
+      "expected_source": null,
+      "also_acceptable": [
+        "citation"
+      ],
+      "note": "Second accurate restatement, on a different section, so 'stay quiet' is not measured against one part of the corpus."
+    },
+    {
+      "id": "none-outside-knowledge-trap",
+      "notes_passage": "In the standard model, a minimum wage set above the equilibrium wage is a price floor that causes unemployment.",
+      "expected_type": "none",
+      "expected_source": null,
+      "note": "Textbook-correct, but the corpus never discusses minimum wages, and mentions price floors only in passing as part of resale price maintenance. Retrieval lands on the labour-market and price-ceiling sections; an agent answering from its own knowledge will cite or gap-fill, a grounded one stays quiet."
+    },
+    {
+      "id": "contra-supply-shift-direction",
+      "notes_passage": "An increase in supply raises both the equilibrium price and the equilibrium quantity.",
+      "expected_type": "contradiction",
+      "expected_source": "Shifts in the supply curve",
+      "note": "The source says an increase in supply lowers the price and raises the quantity, and that after a supply shift 'price and the quantity move in opposite directions'. Near-miss: the demand-shift section describes both rising, which is what this passage wrongly borrows."
+    },
+    {
+      "id": "contra-price-shifts-demand",
+      "notes_passage": "When the price of a good rises, its demand curve shifts to the left.",
+      "expected_type": "contradiction",
+      "expected_source": "Shifts in the demand curve",
+      "note": "Confuses a movement along the curve with a shift. The source names the distinction explicitly: a movement along the curve is 'a change in the quantity demanded', a shift is 'a change in demand'."
+    },
+    {
+      "id": "contra-no-exceptions",
+      "notes_passage": "The law of demand has no exceptions: a higher price always lowers the quantity demanded.",
+      "expected_type": "contradiction",
+      "expected_source": "Upward-sloping demand: Veblen and Giffen goods",
+      "note": "The hardest case in the set, because the source disagrees with itself: 'The demand curve and its determinants' says the demand curve is 'always downward-sloping', and the next section names Veblen and Giffen goods as upward-sloping exceptions. Citing the first section as support is the plausible wrong answer."
+    },
+    {
+      "id": "contra-rent-control-supply",
+      "notes_passage": "When the US introduced rent controls in the 1940s, landlords responded by offering more homes for rent.",
+      "expected_type": "contradiction",
+      "expected_source": "Price ceilings in practice",
+      "note": "The source says the policy lowered the supply of rentable properties as landlords converted them to sellable property."
+    },
+    {
+      "id": "gap-long-run-supply",
+      "notes_passage": "Supply responds to a change in price differently in the short run than in the long run.",
+      "expected_type": "gap_fill",
+      "expected_source": "The supply curve and its determinants",
+      "also_acceptable": [
+        "citation"
+      ],
+      "note": "True, but stops short of what the source explains: in the long run firms enter and exit and all inputs adjust, so long-run supply curves are flatter (more elastic)."
+    },
+    {
+      "id": "gap-partial-equilibrium",
+      "notes_passage": "The supply and demand model looks at one market at a time.",
+      "expected_type": "gap_fill",
+      "expected_source": "Partial equilibrium",
+      "also_acceptable": [
+        "citation"
+      ],
+      "note": "The source names this partial equilibrium and covers what it holds fixed (prices of substitutes and complements, incomes) and its cost in realism."
+    },
+    {
+      "id": "gap-deadweight-loss",
+      "notes_passage": "Total surplus is consumer surplus plus producer surplus.",
+      "expected_type": "gap_fill",
+      "expected_source": "Economic surplus and deadweight loss",
+      "also_acceptable": [
+        "citation"
+      ],
+      "note": "Correct, but the same sentence of the source goes on to define deadweight loss as the drop in total surplus from inefficiency, which the notes omit."
+    },
+    {
+      "id": "gap-surplus-price-fall",
+      "notes_passage": "When the price of a good falls, consumer surplus goes up.",
+      "expected_type": "gap_fill",
+      "expected_source": "Consumer surplus",
+      "also_acceptable": [
+        "citation"
+      ],
+      "note": "The source splits the gain between two groups — existing buyers paying less and new buyers who enter at the lower price — and the notes have neither."
+    },
+    {
+      "id": "cite-demand-shift",
+      "notes_passage": "An increase in demand shifts the demand curve to the right, raising both the equilibrium price and the equilibrium quantity.",
+      "expected_type": "citation",
+      "expected_source": "Shifts in the demand curve",
+      "note": "Correct and uncited. Mirror image of contra-supply-shift-direction: the supply-shift section is the near-miss that a topic-level retriever will also pull."
+    },
+    {
+      "id": "cite-hitas",
+      "notes_passage": "Price caps on Helsinki's Hitas apartments cause queuing and discourage owners from moving when their circumstances change.",
+      "expected_type": "citation",
+      "expected_source": "Price ceilings in practice",
+      "note": "Narrow and supported by one paragraph. The easy end of the retrieval range."
+    },
+    {
+      "id": "cite-focal-point",
+      "notes_passage": "A legal maximum price can act as a focal point that helps competing sellers coordinate on a higher price.",
+      "expected_type": "citation",
+      "expected_source": "How a price ceiling can raise prices",
+      "note": "Supported by the collusion paragraph. Near-miss with the 'Price ceilings' section, which shares the vocabulary but not this claim."
+    },
+    {
+      "id": "cite-marshall-axis",
+      "notes_passage": "Economists put price on the vertical axis, a convention popularised by Alfred Marshall.",
+      "expected_type": "citation",
+      "expected_source": "Which axis price goes on",
+      "note": "Supported by the Marshall sentence in the history paragraph."
+    }
+  ]
+}

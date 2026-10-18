@@ -11,8 +11,7 @@ rejects, never as an edit to the shared document.
 <!-- Demo GIF: two browsers editing one doc, then Check with AI producing a cited suggestion.
 ![Gloss: two collaborators and a cited AI suggestion](docs/media/demo.gif) -->
 
-<!-- Live demo link, no account needed:
-**[Try the demo →](https://<your-vercel-host>/#/demo)** -->
+**[Try the demo →](https://gloss-coral.vercel.app/#/demo)** (no account needed)
 
 ## What it does
 
@@ -58,7 +57,7 @@ flowchart LR
 | Sync | y-websocket server, auth on upgrade, single writer of document state | `apps/realtime` |
 | API | FastAPI, SQLAlchemy, Supabase JWT (JWKS), one authz module | `apps/api` |
 | Ingestion + agent | sentence-transformers embeddings, pgvector retrieval, schema-constrained Claude calls | `apps/agent-worker` |
-| Eval | 18 labelled cases, five metrics, reproducible run records | `eval/` |
+| Eval | 36 labelled cases on two courses, five metrics, reproducible run records | `eval/` |
 | Schema | 17 portable Postgres migrations + Supabase RLS lockdown | `infra/` |
 
 The agent is a separate worker, not part of the editing path: the API and
@@ -70,24 +69,34 @@ lets the agent be evaluated, rate-limited and scaled without touching sync.
 
 The agent is scored against hand-written cases — passages that correctly
 restate the source, planted factual errors, and notes with an obvious gap —
-and every run records the model, prompt hash, `top_k`, chunk size and a
-fingerprint of the corpus behind its numbers.
+on two courses: a biology handout written for this repo, and an economics set
+built from verbatim Wikipedia text nobody wrote to be graded. Every run records
+the model, prompt hash, `top_k`, chunk size and a fingerprint of the corpus
+behind its numbers.
 
-| | baseline | now |
-|---|---|---|
-| type accuracy | 67% | 72% |
-| flag precision | 71% | 80% |
-| flag recall | 100% | 100% |
-| grounding accuracy | 83% | 92% |
-| retrieval recall@k | 92% | 92% |
+| | baseline (Sept) | best logged (Sept) | biology today (2 runs) | economics today |
+|---|---|---|---|---|
+| type accuracy | 67% | 72% | 50–56% | 67% |
+| flag precision | 71% | 80% | 75% | 75% |
+| flag recall | 100% | 100% | 100% | 100% |
+| grounding accuracy | 83% | 92% | 92% | 92% |
+| retrieval recall@k | 92% | 92% | 92% | 92% |
+
+Contradiction detection, grounding and retrieval hold steady across both
+courses and every run. The weak spot is the choice between adding a citation,
+suggesting a gap fill, and staying quiet: the agent over-suggests gap fills on
+both courses, and the choice is unstable enough that two runs of the same code
+miss different cases. The best logged 72% does not reproduce on today's code,
+and one run of 18 cases cannot measure that boundary — so the next change to it
+gets several runs per side.
 
 The [eval log](eval/CHANGELOG.md) is more useful than the table: one change at
 a time, with the run behind every number. One queued change was dropped
 without being run because the baseline showed its failure mode never occurred.
 One change made the score *worse* and was kept, because it exposed a prompt bug
-that the next change fixed. Retrieval recall@k never moved across five runs —
-every point came from the prompt, which is worth knowing before spending
-anything on the retriever.
+that the next change fixed. Retrieval recall@k never moved across any run on
+either course — every point came from the prompt, which is worth knowing before
+spending anything on the retriever.
 
 ## Problems worth talking about
 
@@ -116,9 +125,10 @@ anything on the retriever.
 
 Everything above is built and runs end to end. Open:
 
-- The eval cases run against a synthetic cellular-respiration handout
-  (`eval/test_cases/sample_course_source.md`), not a real course's slides —
-  so the score says the agent works on material shaped like a course.
+- The eval covers two subjects, and neither is a real course's slides: a
+  synthetic biology handout and Wikipedia text on supply and demand
+  (`eval/test_cases/`).
+- Gap-fill suggestions over-fire and vary from run to run (see above).
 - The agent runs on demand; a debounced background pass is not built yet.
 - Contradiction detection works within one source, not across two.
 - Uploaded files live as `bytea` in Postgres (20 MB each); object storage is

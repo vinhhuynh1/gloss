@@ -48,6 +48,70 @@ Notes on failure modes: ...
 
 ---
 
+## 2026-10-17 — a second corpus, and a re-run that does not reproduce
+
+Records: `results/2026-10-18T00-08-01+00-00.json` (ECON),
+`results/2026-10-18T00-11-11+00-00.json` and
+`results/2026-10-18T00-14-45+00-00.json` (BIOL, two runs, same config).
+Same model, `top_k`, chunking and embedding model as the 2026-09-12 entries;
+`prompt_sha256` is `07756bdaa386eda7`, not the `072c79d343530494` those entries
+ran under. No agent change in this entry.
+
+**A second test set on material nobody wrote for this repo.** Every number
+above came from a handout written to be gradeable. `econ_supply_demand.json`
+grades the agent against verbatim paragraphs from three Wikipedia articles
+(CC BY-SA 4.0, revisions pinned in the source file's header), with the same
+case mix as the BIOL set — 6 `none`, 4 `contradiction`, 4 `gap_fill`, 4
+`citation` — so the two rows read side by side. OpenStax was the first choice
+and was ruled out: its licence forbids ingesting the books into generative AI.
+
+| metric | BIOL 09-12 (logged) | BIOL now, run 1 | BIOL now, run 2 | ECON |
+|---|---|---|---|---|
+| type accuracy | 72% | 56% | 50% | 67% |
+| type accuracy (lenient) | 72% | 56% | 56% | 72% |
+| flag precision | 80% | 75% | 75% | 75% |
+| flag recall | 100% | 100% | 100% | 100% |
+| grounding accuracy | 92% | 92% | 92% | 92% |
+| retrieval recall@k | 92% | 92% | 92% | 92% |
+
+What carried over to economics: contradictions went 4/4, grounded, including
+`contra-no-exceptions`, where the source contradicts itself (one section says
+the demand curve is "always downward-sloping", the next names Giffen goods).
+Grounding and recall@k landed on exactly the BIOL numbers. Flag recall stayed
+at 100%.
+
+What also carried over is the failure mode. All six ECON misses are `gap_fill`
+firing where it should not — three `none` cases and two `citation` cases (plus
+one `none` answered `citation`, a lenient pass). That is the same row of the
+confusion matrix that every BIOL entry above ends on, so it is not something
+the handout's wording caused.
+
+**The BIOL re-run does not reproduce 72%.** Two runs back to back on the same
+config scored 56% and 50%, and they missed *different* cases —
+`none-correct-restatement` failed in run 1 and passed in run 2;
+`none-outside-knowledge-trap` did the reverse, and `gap-mtdna-heteroplasmy`
+went from `gap_fill` to `citation` (a lenient pass). Six misses were common to
+both, all `gap_fill` answered for a `none` or `citation` case. The
+contradiction, grounding and retrieval numbers did not move at all. So the
+`none`/`citation`/`gap_fill` boundary is not just wrong in a consistent way; it
+is unstable from one run to the next, and a single run of 18 cases cannot
+separate a ±11-point change from noise there. Which of three things caused the
+drop from 72% is not isolated: the prompt hash changed (the commits since touch
+`prompts.py` for quizzes and study guides), the `claude-opus-5` alias may now
+resolve to a different snapshot, or 72% was itself a high draw.
+
+Two consequences for whatever comes next:
+
+- Any change aimed at `gap_fill` needs several runs per side before its entry
+  means anything. A single before/after on this boundary is a coin flip.
+- `none-outside-knowledge-trap` in the ECON set produced a `gap_fill` grounded
+  in the corpus (the labour-market paragraph doubting the curves exist), not
+  outside knowledge. The case was written expecting outside knowledge to be the
+  failure, and it is left as written rather than re-labelled after seeing the
+  result; read its miss as weaker evidence than the others.
+
+---
+
 ## 2026-09-17 — study guides, measured separately
 
 Record: none yet — `python eval/run_eval.py --guide` writes one, prefixed
